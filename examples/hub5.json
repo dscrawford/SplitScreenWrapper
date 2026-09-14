@@ -1,0 +1,11 @@
+{
+  "frame": {"width": 1280, "height": 720},
+  "layout": {"name": "hub", "center_fraction": 0.5},
+  "instances": [
+    {"id": "main", "command": ["python3", "dummy_game/game.py", "--player", "5", "--role", "main"]},
+    {"id": "gba1", "command": ["python3", "dummy_game/game.py", "--player", "1", "--role", "pad"]},
+    {"id": "gba2", "command": ["python3", "dummy_game/game.py", "--player", "2", "--role", "pad"]},
+    {"id": "gba3", "command": ["python3", "dummy_game/game.py", "--player", "3", "--role", "pad"]},
+    {"id": "gba4", "command": ["python3", "dummy_game/game.py", "--player", "4", "--role", "pad"]}
+  ]
+}

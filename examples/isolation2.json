@@ -1,0 +1,8 @@
+{
+  "frame": {"width": 1280, "height": 720},
+  "layout": "grid",
+  "instances": [
+    {"id": "sandboxed-nopad", "command": ["python3", "dummy_game/game.py", "--player", "1"], "isolate_input": true},
+    {"id": "gamescoped", "command": ["python3", "dummy_game/game.py", "--player", "2"], "gamescope": true}
+  ]
+}

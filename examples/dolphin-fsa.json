@@ -1,0 +1,18 @@
+{
+  "frame": {"width": 1920, "height": 1080},
+  "layout": {"name": "hub", "center_fraction": 0.6},
+  "instances": [
+    {
+      "id": "dolphin",
+      "command": ["dolphin-emu", "--batch", "--exec", "/path/to/Four Swords Adventures.rvz"],
+      "env": {"DOLPHIN_EMU_USERPATH": "/home/me/.local/share/splitscreen/dolphin-fsa"},
+      "windows": [
+        {"id": "main", "match": "^Dolphin"},
+        {"id": "gba1", "match": "^GBA1\\b"},
+        {"id": "gba2", "match": "^GBA2\\b"},
+        {"id": "gba3", "match": "^GBA3\\b"},
+        {"id": "gba4", "match": "^GBA4\\b"}
+      ]
+    }
+  ]
+}
