@@ -68,7 +68,31 @@ which gamepads that instance can see, which makes isolation visible.
 ```
 
 Slot order = instance order, then window order within an instance. For `hub`, the first
-slot is the center. `devices` or `keyboard_to_pad` imply `isolate_input: true`; set it
+slot is the center.
+
+### Layouts
+
+| name | what it does | args |
+|---|---|---|
+| `grid` | most-square grid for any count | |
+| `hub` | center + up to four corners (leaves black space by design) | `center_fraction` |
+| `tree` | i3-style nested splits, never leaves gaps | `split`: `{"split": "h"\|"v", "ratio": [..], "children": [...]}`, `{}` = leaf |
+| `free` | explicit slots as fractions of the frame (what the editor saves) | `slots`: `[{"x","y","w","h"}, ...]` |
+
+Tree examples: two GBAs stacked in a 25% column with the game on the right
+(`examples/gotg-fsa-sidebar.json`), and two on top with one full-width below (`examples/tri3.json`).
+
+### Layout editor
+
+```bash
+python3 -m splitscreen.editor examples/gotg-fsa.json        # drag/resize the slots of an existing config
+python3 -m splitscreen.editor new.json --slots 3 --preset sidebar
+```
+
+Drag a slot to move it, drag its bottom-right corner to resize; edges snap to the frame and to
+other slots. Keys: `1` grid, `2` sidebar, `3` tri, `4` hub, `A` add, `D` delete, `S` save,
+`Esc` quit. The status line shows how much of the frame is covered and warns on overlap.
+Saving writes a `free` layout back into the config and leaves everything else untouched. `devices` or `keyboard_to_pad` imply `isolate_input: true`; set it
 explicitly to give an instance *no* input devices at all.
 
 An instance that opens several windows from one process declares them with `windows`;
@@ -100,6 +124,18 @@ Dolphin settings need editing. `examples/dolphin-fsa.json` is the same idea for 
 plain Dolphin install with all four GBAs. Controllers for the GBAs are mapped
 inside Dolphin (Controllers → GBA (Integrated)), so input isolation is not needed.
 
+## Portability
+
+The frame is nested sway, a wlroots compositor: it runs nested under any Wayland desktop
+(KDE, GNOME, Hyprland, ...) and, via the wlroots X11 backend, under an X11 desktop too. Only
+the cosmetic "float the frame at the requested size" step talks to a sway/i3 host. Games
+inside can be Wayland or X11.
+
+Steam Deck: desktop mode is KDE Plasma on Wayland, so it should work once a `sway` binary is
+available (SteamOS is immutable: static build, distrobox or nix-portable rather than pacman).
+Gaming mode hosts one app inside gamescope; running the nested frame there is plausible but
+untested. Neither has been tried on a Deck yet.
+
 ## Known limits (MVP)
 
 - **Keyboard and mouse per player** only via `kbd2pad` (keyboard becomes a gamepad).
@@ -117,7 +153,8 @@ inside Dolphin (Controllers → GBA (Integrated)), so input isolation is not nee
 ## Layout of the code
 
 ```
-splitscreen/layout.py     pure layout math (tested)
+splitscreen/layout.py     pure layout math: grid, hub, tree, free (tested)
+splitscreen/editor.py     drag/resize layout editor, saves `free` layouts (tested headless)
 splitscreen/procmatch.py  PID -> instance (tested)
 splitscreen/sandbox.py    bwrap argv builder (tested)
 splitscreen/config.py     JSON -> frozen dataclasses with validation (tested)
@@ -125,6 +162,6 @@ splitscreen/assign.py     window -> slot resolution incl. title regexes (tested)
 splitscreen/kbd2pad.py    keyboard -> virtual gamepad (unit + uinput integration test)
 splitscreen/session.py    orchestrator: nested sway, IPC, placement, settle loop, teardown
 dummy_game/game.py        stand-in multiplayer game
-examples/*.json           grid4, hub5, isolation2, gotg-fsa (verified), dolphin-fsa (illustrative)
+examples/*.json           grid4, hub5, tri3, isolation2, gotg-fsa (verified), gotg-fsa-sidebar, dolphin-fsa
 docs/*.png                screenshots from the verified runs
 ```

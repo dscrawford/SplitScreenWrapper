@@ -1,0 +1,12 @@
+{
+  "frame": {"width": 1280, "height": 720},
+  "layout": {"name": "tree", "split": {"split": "v", "children": [
+    {"split": "h", "children": [{}, {}]},
+    {}
+  ]}},
+  "instances": [
+    {"id": "p1", "command": ["python3", "dummy_game/game.py", "--player", "1"]},
+    {"id": "p2", "command": ["python3", "dummy_game/game.py", "--player", "2"]},
+    {"id": "p3", "command": ["python3", "dummy_game/game.py", "--player", "3"]}
+  ]
+}

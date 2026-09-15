@@ -55,3 +55,56 @@ def test_compute_dispatch_and_unknown():
     assert compute("grid", 2, 10, 10) == grid(2, 10, 10)
     with pytest.raises(ValueError):
         compute("nope", 1, 10, 10)
+
+
+from splitscreen.layout import Frac, free, tree, tree_fracs, PRESETS
+
+
+def covers_frame_without_overlap(rects, w, h):
+    area = sum(r.w * r.h for r in rects)
+    for i, a in enumerate(rects):
+        for b in rects[i + 1:]:
+            assert a.x + a.w <= b.x or b.x + b.w <= a.x or a.y + a.h <= b.y or b.y + b.h <= a.y
+    return area == w * h
+
+
+def test_sidebar_preset_two_stacked_left_big_right_no_gaps():
+    rects = tree(3, 1920, 1080, split=PRESETS["sidebar"])
+    assert rects[0] == Rect(0, 0, 480, 540)
+    assert rects[1] == Rect(0, 540, 480, 540)
+    assert rects[2] == Rect(480, 0, 1440, 1080)
+    assert covers_frame_without_overlap(rects, 1920, 1080)
+
+
+def test_tri_preset_two_on_top_one_full_width_below():
+    rects = tree(3, 1280, 720, split=PRESETS["tri"])
+    assert rects[0] == Rect(0, 0, 640, 360) and rects[1] == Rect(640, 0, 640, 360)
+    assert rects[2] == Rect(0, 360, 1280, 360)
+    assert covers_frame_without_overlap(rects, 1280, 720)
+
+
+def test_grid4_preset_matches_grid():
+    assert tree(4, 1280, 720, split=PRESETS["grid4"]) == grid(4, 1280, 720)
+
+
+def test_tree_rejects_wrong_leaf_count_and_bad_ratio():
+    with pytest.raises(ValueError):
+        tree(2, 100, 100, split=PRESETS["tri"])
+    with pytest.raises(ValueError):
+        tree_fracs({"split": "h", "ratio": [1], "children": [{}, {}]})
+    with pytest.raises(ValueError):
+        tree_fracs({"split": "x", "children": [{}, {}]})
+
+
+def test_free_layout_rounds_to_pixels_and_validates():
+    rects = free(2, 1000, 500, slots=[{"x": 0, "y": 0, "w": 0.333, "h": 1}, {"x": 0.333, "y": 0, "w": 0.667, "h": 1}])
+    assert rects == (Rect(0, 0, 333, 500), Rect(333, 0, 667, 500))
+    with pytest.raises(ValueError):
+        free(1, 10, 10, slots=[{"x": 0, "y": 0, "w": 1.5, "h": 1}])
+    with pytest.raises(ValueError):
+        free(2, 10, 10, slots=[{"x": 0, "y": 0, "w": 1, "h": 1}])
+
+
+def test_frac_roundtrip_edges_meet_exactly():
+    a, b = Frac(0, 0, 0.3333, 1).to_rect(1920, 1080), Frac(0.3333, 0, 0.6667, 1).to_rect(1920, 1080)
+    assert a.x + a.w == b.x

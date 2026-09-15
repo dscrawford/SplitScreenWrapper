@@ -1,0 +1,25 @@
+{
+  "frame": {"width": 1920, "height": 1080},
+  "layout": {"name": "tree", "split": {"split": "h", "ratio": [1, 3], "children": [
+    {"split": "v", "children": [{}, {}]},
+    {}
+  ]}},
+  "instances": [
+    {
+      "id": "fsa",
+      "command": [
+        "/home/daniel/.local/state/gotg/app/bin/gotg", "play", "usa.legend_of_zelda_four_swords_adventures",
+        "-C", "Dolphin.Core.SIDevice1=13",
+        "-C", "Dolphin.Core.SIDevice2=13",
+        "-C", "Dolphin.GBA.BIOS=/home/daniel/.local/state/gotg/firmware/gba/gba_bios.bin",
+        "-C", "Dolphin.Display.Fullscreen=False"
+      ],
+      "env": {"GOTG_FULLSCREEN": "0"},
+      "windows": [
+        {"id": "gba2", "match": "^GBA2\\b"},
+        {"id": "gba3", "match": "^GBA3\\b"},
+        {"id": "main", "match": "^Dolphin"}
+      ]
+    }
+  ]
+}

@@ -56,7 +56,86 @@ def hub(count: int, width: int, height: int, center_fraction: float = 0.5) -> tu
     return (center, *corners)[:count]
 
 
-LAYOUTS = {"grid": grid, "hub": hub}
+@dataclass(frozen=True)
+class Frac:
+    """A slot as fractions of the frame, the unit the editor works in."""
+    x: float
+    y: float
+    w: float
+    h: float
+
+    def to_rect(self, width: int, height: int) -> Rect:
+        x0, y0 = round(self.x * width), round(self.y * height)
+        x1, y1 = round((self.x + self.w) * width), round((self.y + self.h) * height)
+        return Rect(x0, y0, max(1, x1 - x0), max(1, y1 - y0))
+
+
+def frac_from_dict(d: dict) -> Frac:
+    try:
+        f = Frac(float(d["x"]), float(d["y"]), float(d["w"]), float(d["h"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"slot needs numeric x, y, w, h: {d!r}") from exc
+    if not (0 <= f.x <= 1 and 0 <= f.y <= 1 and 0 < f.w <= 1 and 0 < f.h <= 1):
+        raise ValueError(f"slot fractions must lie inside the frame: {d!r}")
+    return f
+
+
+def free(count: int, width: int, height: int, slots: list | tuple = ()) -> tuple[Rect, ...]:
+    """Explicit slots as fractions of the frame; what the editor saves."""
+    fracs = tuple(f if isinstance(f, Frac) else frac_from_dict(f) for f in slots)
+    if len(fracs) != count:
+        raise ValueError(f"free layout has {len(fracs)} slots but {count} are needed")
+    return tuple(f.to_rect(width, height) for f in fracs)
+
+
+def tree_fracs(node: dict, x: float = 0.0, y: float = 0.0, w: float = 1.0, h: float = 1.0) -> tuple[Frac, ...]:
+    """Recursive binary/n-ary splits, i3-style, so nothing is ever left uncovered.
+
+    node = {} is a leaf. Otherwise {"split": "h"|"v", "children": [...], "ratio": [..]}
+    where ratio (optional) gives each child's share and defaults to equal shares.
+    Leaves are numbered depth-first, left to right; that is the slot order.
+    """
+    children = node.get("children")
+    if not children:
+        return (Frac(x, y, w, h),)
+    direction = node.get("split", "h")
+    if direction not in ("h", "v"):
+        raise ValueError(f"split must be 'h' or 'v', got {direction!r}")
+    ratio = node.get("ratio") or [1.0] * len(children)
+    if len(ratio) != len(children) or any(r <= 0 for r in ratio):
+        raise ValueError("ratio must list one positive share per child")
+    total = float(sum(ratio))
+    out: list[Frac] = []
+    offset = 0.0
+    for child, share in zip(children, ratio):
+        part = share / total
+        if direction == "h":
+            out.extend(tree_fracs(child, x + offset * w, y, part * w, h))
+        else:
+            out.extend(tree_fracs(child, x, y + offset * h, w, part * h))
+        offset += part
+    return tuple(out)
+
+
+def tree(count: int, width: int, height: int, split: dict | None = None) -> tuple[Rect, ...]:
+    fracs = tree_fracs(split or {})
+    if len(fracs) != count:
+        raise ValueError(f"tree layout has {len(fracs)} leaves but {count} slots are needed")
+    return tuple(f.to_rect(width, height) for f in fracs)
+
+
+# Ready-made trees. Slot order is depth-first, so for "sidebar" the two stacked
+# side slots come first and the big one last; configs list instances accordingly.
+PRESETS: dict[str, dict] = {
+    "grid4": {"split": "v", "children": [
+        {"split": "h", "children": [{}, {}]}, {"split": "h", "children": [{}, {}]}]},
+    "sidebar": {"split": "h", "ratio": [1, 3], "children": [
+        {"split": "v", "children": [{}, {}]}, {}]},
+    "tri": {"split": "v", "children": [
+        {"split": "h", "children": [{}, {}]}, {}]},
+}
+
+LAYOUTS = {"grid": grid, "hub": hub, "free": free, "tree": tree}
 
 
 def compute(name: str, count: int, width: int, height: int, **kwargs) -> tuple[Rect, ...]:
