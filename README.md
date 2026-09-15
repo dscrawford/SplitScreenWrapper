@@ -108,22 +108,6 @@ each entry gets its own slot and a `match` regex tested against title, app_id an
 Windows whose title does not match yet are held until a later title change matches
 (Qt/XWayland windows usually get their real title after mapping).
 
-## Four Swords Adventures
-
-![Four Swords Adventures via gotg: main window center, GBA2 and GBA3 in the top corners](docs/gotg-four-swords.png)
-
-Dolphin's Integrated GBA spawns each GBA as a separate top-level window
-(class `dolphin-emu`, titles `GBA1`..`GBA4`) from the **same process**, so PID
-lineage alone cannot tell them apart. The `windows` rules layer title regexes on
-top of PID lineage: one Dolphin process, several windows, `hub` layout.
-
-`examples/gotg-fsa.json` is the verified run above: `gotg play` launches Dolphin,
-and `-C` overrides turn GameCube ports 2 and 3 into integrated GBAs
-(`Dolphin.Core.SIDevice1=13`, `SIDevice2=13`) and point at a GBA BIOS, so no
-Dolphin settings need editing. `examples/dolphin-fsa.json` is the same idea for a
-plain Dolphin install with all four GBAs. Controllers for the GBAs are mapped
-inside Dolphin (Controllers → GBA (Integrated)), so input isolation is not needed.
-
 ## Portability
 
 The frame is nested sway, a wlroots compositor: it runs nested under any Wayland desktop
