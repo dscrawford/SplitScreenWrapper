@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import modes
+
 
 @dataclass(frozen=True)
 class WindowSpec:
@@ -85,6 +87,9 @@ def window_from_dict(inst_id: str, d: dict) -> WindowSpec:
 
 
 def session_from_dict(d: dict) -> Session:
+    # A mode writes the instances, windows and layout that a known game's split
+    # screen always has; anything the config states itself is left alone.
+    d = modes.expand(d)
     insts = d.get("instances")
     _require(isinstance(insts, list) and insts, "config needs a non-empty 'instances' list")
     instances = tuple(instance_from_dict(i) for i in insts)

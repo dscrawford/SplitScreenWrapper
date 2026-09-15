@@ -51,7 +51,7 @@ which gamepads that instance can see, which makes isolation visible.
 ```jsonc
 {
   "frame": {"width": 1280, "height": 720},          // requested host window size (best effort)
-  "layout": {"name": "hub", "center_fraction": 0.5}, // or "grid"
+  "layout": {"name": "hub", "center_fraction": 0.5}, // or "grid"; a "mode" can write this instead
   "instances": [
     {
       "id": "p1",
@@ -107,6 +107,76 @@ each entry gets its own slot and a `match` regex tested against title, app_id an
 
 Windows whose title does not match yet are held until a later title change matches
 (Qt/XWayland windows usually get their real title after mapping).
+
+## Four Swords Adventures
+
+![Four players: GBA1-2 down the left, GBA3-4 down the right, the game between them](docs/fsa4-mode.png)
+
+*`examples/fsa4.json`, verified run. Green is player 1 (top left), red player 2
+(bottom left), blue player 3 (top right), purple player 4 (bottom right) — the
+game's own colours, which is the check that the windows and the controllers
+were handed out in the same order.*
+
+Four things have to agree about a Four Swords session: where player 3's GBA
+window goes, which title rule catches it, which Dolphin port is a GBA, and
+which controller drives it. Written by hand in four places they drift, and a
+session where player 3's screen is top-right while their pad drives GBA2 does
+not look broken — it looks like the game is wrong. So the mode writes all four
+from one number:
+
+```jsonc
+{
+  "frame": {"width": 1920, "height": 1080},
+  "mode": {
+    "name": "fsa",
+    "players": 4,
+    "gc": "usa.legend_of_zelda_four_swords_adventures",   // a gotg entry id, or a disc image path
+    "gba_bios": "~/.local/state/gotg/firmware/gba/gba_bios.bin"
+  }
+}
+```
+
+```bash
+python3 -m splitscreen.session examples/fsa4.json   # or examples/fsa2.json
+python3 -m splitscreen.modes.fsa --players 3 --gc usa.legend_of_zelda_four_swords_adventures \
+    --gba-bios ~/.local/state/gotg/firmware/gba/gba_bios.bin -o mine.json
+```
+
+| players | layout | ports |
+|---|---|---|
+| 1 | the game, whole frame — no GBA is used | port 1 is a plain GameCube controller |
+| 2 | both GBAs stacked down the left quarter, game on the rest | ports 1-2 become GBAs |
+| 3 | two GBAs left, one top right, game between them, one corner left blank | ports 1-3 |
+| 4 | two GBAs left, two right, game between them | ports 1-4 |
+
+Three players leave the fourth corner empty rather than growing the other
+three, so somebody joining moves nobody who is already playing.
+
+**Controllers are handed out in order**: the first pad SDL reports drives GBA1,
+the second GBA2, and so on, through the same `dolphin_gba` pre_launch handler a
+hand-written config would use. `"pads": ["pad:1", "pad:0", "keyboard"]` overrides
+that per player — for two pads that enumerate the wrong way round, or a
+keyboard in the third seat — and it must name one device per player, since
+filling the rest in silently would hand somebody another player's pad.
+
+`"gc"` decides the launcher: a path (or anything ending `.iso`, `.rvz`, `.gcm`)
+runs `dolphin-emu -b -e`, anything else is an entry id for `gotg play`. Set
+`"config_dir"` where Dolphin keeps `dolphin-emu/GBA.ini` if it is neither
+gotg's GameCube environment nor `~/.config`, and `"side_fraction"` to make the
+GBA columns wider or narrower. Anything the config states for itself — its own
+`layout`, say — wins over what the mode generated.
+
+Dolphin's Integrated GBA spawns each GBA as a separate top-level window
+(class `dolphin-emu`, titles `GBA1`..`GBA4`) from the **same process**, so PID
+lineage alone cannot tell them apart. The `windows` rules layer title regexes on
+top of PID lineage: one Dolphin process, several windows, `hub` layout.
+
+`examples/gotg-fsa.json` is the verified run above: `gotg play` launches Dolphin,
+and `-C` overrides turn GameCube ports 2 and 3 into integrated GBAs
+(`Dolphin.Core.SIDevice1=13`, `SIDevice2=13`) and point at a GBA BIOS, so no
+Dolphin settings need editing. `examples/dolphin-fsa.json` is the same idea for a
+plain Dolphin install with all four GBAs. Controllers for the GBAs are mapped
+inside Dolphin (Controllers → GBA (Integrated)), so input isolation is not needed.
 
 ## Portability
 
@@ -165,7 +235,8 @@ splitscreen/assign.py     window -> slot resolution incl. title regexes (tested)
 splitscreen/kbd2pad.py    keyboard -> virtual gamepad (unit + uinput integration test)
 splitscreen/session.py    orchestrator: nested sway, IPC, placement, settle loop, pre_launch, teardown
 splitscreen/handlers/     emulator-specific pre_launch helpers (dolphin_gba: pads -> GBA ports, tested)
+splitscreen/modes/        whole configs for a game whose shape is known (fsa: 1-4 players, tested)
 dummy_game/game.py        stand-in multiplayer game
-examples/*.json           grid4, hub5, tri3, isolation2, gotg-fsa (verified), gotg-fsa-sidebar, dolphin-fsa
+examples/*.json           grid4, hub5, tri3, isolation2, fsa2/fsa4 (the mode), gotg-fsa (verified), gotg-fsa-sidebar, dolphin-fsa
 docs/*.png                screenshots from the verified runs
 ```

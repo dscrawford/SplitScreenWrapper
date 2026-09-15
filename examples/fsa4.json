@@ -1,0 +1,9 @@
+{
+  "frame": {"width": 1920, "height": 1080},
+  "mode": {
+    "name": "fsa",
+    "players": 4,
+    "gc": "usa.legend_of_zelda_four_swords_adventures",
+    "gba_bios": "~/.local/state/gotg/firmware/gba/gba_bios.bin"
+  }
+}

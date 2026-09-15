@@ -1,10 +1,12 @@
 import pytest
-from splitscreen.handlers.dolphin_gba import (KEYBOARD_DEVICE, gba_section, rewrite, parse_device, pads_from_gotg)
+from splitscreen.handlers import dolphin_gba
+from splitscreen.handlers.dolphin_gba import (KEYBOARD_DEVICE, gba_section, rewrite, parse_device,
+                                              pads_from_gotg, players_from_gotg)
 
 GOTG_JSON = '[{"name": "Steam Controller", "slot": 0, "gamepad": true, "map": {}}, {"name": "Xbox 360 Controller", "slot": 1, "gamepad": true, "map": {}}, {"name": "Mouse", "slot": 2, "gamepad": false, "map": null}]'
 
 
-def test_pads_from_gotg_keeps_gamepads_in_slot_order():
+def test_pads_from_gotg_keeps_gamepads_in_enumeration_order():
     assert pads_from_gotg(GOTG_JSON) == ("SDL/0/Steam Controller", "SDL/1/Xbox 360 Controller")
     assert pads_from_gotg("not json") == ()
 
@@ -55,3 +57,59 @@ def test_gotg_pads_path_is_read_from_wrapper(tmp_path):
     wrapper.write_text(f"PATH='{store}'$PATH\n")
     assert gotg_pads_from_wrapper(wrapper) == str(store / "gotg-pads")
     assert gotg_pads_from_wrapper(tmp_path / "missing") is None
+
+
+# gotg-pads' `slot` counts pads of the *same* identity, so two models both
+# start at 0. Sorting by it interleaves them, and pad:2 stops meaning "the
+# third controller" the moment somebody plugs in a second of anything.
+INTERLEAVED = """[
+  {"name": "Steam Controller", "slot": 0, "gamepad": true, "map": {}},
+  {"name": "Xbox 360 Controller", "slot": 0, "gamepad": true, "map": {}},
+  {"name": "Xbox 360 Controller", "slot": 1, "gamepad": true, "map": {}},
+  {"name": "8BitDo Pro", "slot": 0, "gamepad": true, "map": {}}
+]"""
+
+
+def test_pads_are_not_reordered_by_their_per_model_slot():
+    assert pads_from_gotg(INTERLEAVED) == (
+        "SDL/0/Steam Controller",
+        "SDL/0/Xbox 360 Controller",
+        "SDL/1/Xbox 360 Controller",
+        "SDL/0/8BitDo Pro",
+    )
+
+
+ORDER_JSON = """{
+  "pinned": true, "ports": 4,
+  "players": [
+    {"player": 2, "seated": true, "name": "Xbox 360 Controller", "key": "0300abcd/1"},
+    {"player": 1, "seated": true, "name": "Steam Controller", "key": "030028/0"},
+    {"player": 3, "seated": false, "name": null, "key": null}
+  ]
+}"""
+
+
+def test_players_from_gotg_is_player_order_not_json_order():
+    # Player one first, whatever order the rows arrive in, and an empty seat is
+    # not a controller somebody can be given.
+    assert players_from_gotg(ORDER_JSON) == ("SDL/0/Steam Controller", "SDL/1/Xbox 360 Controller")
+
+
+def test_players_from_gotg_survives_nonsense():
+    assert players_from_gotg("not json") == ()
+    assert players_from_gotg('{"players": "soon"}') == ()
+
+
+def test_the_seating_a_person_chose_wins_over_enumeration(monkeypatch):
+    # gotg seats pads by `gotg controllers order`; every emulator it launches
+    # already uses that order, so a split screen must not invent its own.
+    monkeypatch.setenv("GOTG_BIN", "/usr/bin/gotg")
+    monkeypatch.setattr(dolphin_gba, "_run", lambda argv, timeout=20: ORDER_JSON if "controllers" in argv else INTERLEAVED)
+    assert dolphin_gba.detect_pads()[0] == "SDL/0/Steam Controller"
+
+
+def test_enumeration_is_the_fallback_when_gotg_cannot_answer(monkeypatch):
+    monkeypatch.setenv("GOTG_BIN", "/usr/bin/gotg")
+    monkeypatch.setenv("GOTG_PADS", "/usr/bin/gotg-pads")
+    monkeypatch.setattr(dolphin_gba, "_run", lambda argv, timeout=20: "" if "controllers" in argv else INTERLEAVED)
+    assert dolphin_gba.detect_pads() == pads_from_gotg(INTERLEAVED)
