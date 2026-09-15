@@ -104,12 +104,21 @@ def terminate_all(procs: list[subprocess.Popen], grace: float = 3.0) -> None:
             _signal_tree(p, signal.SIGKILL)  # leader exited first: sweep any leftovers in its group
 
 
+def pick_output(outputs) -> tuple[int, int] | None:
+    """Pure: size of the first usable output, or None when the frame has no output
+    (which is what the host closing our window looks like from inside)."""
+    for o in outputs:
+        if o.active and o.rect.width > 0 and o.rect.height > 0:
+            return o.rect.width, o.rect.height
+    return None
+
+
 def output_size(conn: i3ipc.Connection, timeout: float = 5.0) -> tuple[int, int]:
     deadline = time.monotonic() + timeout
     while True:
-        outs = [o for o in conn.get_outputs() if o.active and o.rect.width > 0]
-        if outs:
-            return outs[0].rect.width, outs[0].rect.height
+        size = pick_output(conn.get_outputs())
+        if size:
+            return size
         if time.monotonic() > deadline:
             raise RuntimeError("nested sway reported no active output")
         time.sleep(0.1)
@@ -252,6 +261,15 @@ class Runner:
                 if not matches(con, self.slots[slot_id]):
                     place(self.settle_conn, con.id, self.slots[slot_id])
 
+    def on_output(self, conn: i3ipc.Connection, ev) -> None:
+        # The host closing the frame window removes the nested output. Nothing can
+        # be shown any more, so stop cleanly instead of crashing in relayout().
+        if pick_output(conn.get_outputs()) is None:
+            print("[split] frame window closed by host; shutting down", flush=True)
+            conn.main_quit()
+            return
+        self.relayout()
+
     def relayout(self) -> None:
         assert self.conn
         w, h = output_size(self.conn)
@@ -270,7 +288,7 @@ class Runner:
             self.relayout()
             self.launch_instances(nested_env)
             self.conn.on("window", self.on_window)
-            self.conn.on("output", lambda c, e: self.relayout())
+            self.conn.on("output", self.on_output)
             self.settle_conn = i3ipc.Connection(socket_path=str(self.workdir / "sway.sock"))
             threading.Thread(target=self.settle_loop, daemon=True).start()
             for sig in (signal.SIGINT, signal.SIGTERM):
