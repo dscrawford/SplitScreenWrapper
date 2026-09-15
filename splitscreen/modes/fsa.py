@@ -195,6 +195,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--gc", required=True, help="a gotg entry id, or the path to a disc image")
     ap.add_argument("--gba-bios", required=True, help="the GBA BIOS Dolphin boots an integrated GBA with")
     ap.add_argument("--config-dir", help="where Dolphin keeps dolphin-emu/GBA.ini")
+    ap.add_argument("--dolphin", help="the Dolphin to run a disc with (default: dolphin-emu from PATH)")
     ap.add_argument("--pad", action="append", dest="pads", metavar="DEVICE",
                     help="one per player, in order: pad:N, sdl:<name> or keyboard")
     ap.add_argument("--width", type=int, default=1920)
@@ -205,6 +206,8 @@ def main(argv: list[str]) -> int:
     spec = {"name": "fsa", "players": args.players, "gc": args.gc, "gba_bios": args.gba_bios}
     if args.config_dir:
         spec["config_dir"] = args.config_dir
+    if args.dolphin:
+        spec["dolphin"] = args.dolphin
     if args.pads:
         spec["pads"] = args.pads
     try:

@@ -192,6 +192,15 @@ def test_a_config_without_a_mode_is_untouched():
     assert expand_config(plain) == plain
 
 
+def test_a_pinned_dolphin_can_be_named(tmp_path):
+    # A launcher that builds its own Dolphin — gotg does — must be able to say
+    # which one, rather than hoping PATH agrees with it.
+    out = tmp_path / "fsa.json"
+    fsa.main(["--players", "2", "--gc", "/games/fsa.rvz", "--gba-bios", BASE["gba_bios"],
+              "--dolphin", "/nix/store/abc-dolphin/bin/dolphin-emu", "-o", str(out)])
+    assert json.loads(out.read_text())["instances"][0]["command"][0] == "/nix/store/abc-dolphin/bin/dolphin-emu"
+
+
 def test_the_command_line_writes_the_same_config(tmp_path, capsys):
     out = tmp_path / "fsa.json"
     assert fsa.main(["--players", "4", "--gc", BASE["gc"], "--gba-bios", BASE["gba_bios"], "-o", str(out)]) == 0
