@@ -86,14 +86,19 @@ Windows whose title does not match yet are held until a later title change match
 
 ## Four Swords Adventures
 
+![Four Swords Adventures via gotg: main window center, GBA2 and GBA3 in the top corners](docs/gotg-four-swords.png)
+
 Dolphin's Integrated GBA spawns each GBA as a separate top-level window
 (class `dolphin-emu`, titles `GBA1`..`GBA4`) from the **same process**, so PID
-lineage alone cannot tell them apart. `examples/dolphin-fsa.json` layers title
-regexes on top of PID lineage: one Dolphin process, five windows, `hub` layout.
-The layout side is proven by `examples/hub5.json`; the title routing is unit-tested
-against Dolphin's real title formats (`tests/test_assign.py`) but has not yet been
-run against a live Dolphin. Controllers for the GBAs are mapped inside Dolphin
-(Controllers → GBA (Integrated)), so input isolation is not needed for that title.
+lineage alone cannot tell them apart. The `windows` rules layer title regexes on
+top of PID lineage: one Dolphin process, several windows, `hub` layout.
+
+`examples/gotg-fsa.json` is the verified run above: `gotg play` launches Dolphin,
+and `-C` overrides turn GameCube ports 2 and 3 into integrated GBAs
+(`Dolphin.Core.SIDevice1=13`, `SIDevice2=13`) and point at a GBA BIOS, so no
+Dolphin settings need editing. `examples/dolphin-fsa.json` is the same idea for a
+plain Dolphin install with all four GBAs. Controllers for the GBAs are mapped
+inside Dolphin (Controllers → GBA (Integrated)), so input isolation is not needed.
 
 ## Known limits (MVP)
 
@@ -120,6 +125,6 @@ splitscreen/assign.py     window -> slot resolution incl. title regexes (tested)
 splitscreen/kbd2pad.py    keyboard -> virtual gamepad (unit + uinput integration test)
 splitscreen/session.py    orchestrator: nested sway, IPC, placement, settle loop, teardown
 dummy_game/game.py        stand-in multiplayer game
-examples/*.json           grid4, hub5, isolation2, dolphin-fsa (illustrative)
+examples/*.json           grid4, hub5, isolation2, gotg-fsa (verified), dolphin-fsa (illustrative)
 docs/*.png                screenshots from the verified runs
 ```
