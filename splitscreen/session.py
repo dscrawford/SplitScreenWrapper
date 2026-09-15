@@ -154,6 +154,17 @@ def start_kbd2pad(inst: Instance, workdir: Path) -> tuple[subprocess.Popen | Non
     return proc, line
 
 
+def run_pre_launch(inst: Instance, workdir: Path) -> None:
+    """Run the instance's pre_launch commands in order; any failure aborts the session."""
+    for argv in inst.pre_launch:
+        env = {**os.environ, **dict(inst.env), "SPLITSCREEN_INSTANCE": inst.id}
+        with open(workdir / f"{inst.id}.log", "ab") as log:
+            log.write(f"[split] pre_launch: {' '.join(argv)}\n".encode())
+            rc = subprocess.run(argv, env=env, cwd=inst.cwd, stdout=log, stderr=log).returncode
+        if rc != 0:
+            raise RuntimeError(f"{inst.id}: pre_launch failed (exit {rc}): {' '.join(argv)}; see {workdir / f'{inst.id}.log'}")
+
+
 def place(conn: i3ipc.Connection, con_id: int, slot: layout_mod.Rect) -> None:
     replies = conn.command(f"[con_id={con_id}] floating enable, border none, "
                            f"resize set {slot.w} px {slot.h} px, move position {slot.x} px {slot.y} px")
@@ -200,12 +211,13 @@ class Runner:
     def launch_instances(self, nested_env: dict[str, str]) -> None:
         for inst in self.session.instances:
             slot = self.slots[inst.window_specs[0].id]  # gamescope sizes to the instance's first slot
+            run_pre_launch(inst, self.workdir)
             helper, pad = start_kbd2pad(inst, self.workdir)
             if helper:
                 self.helpers.append(helper)
             argv = instance_argv(inst, slot, pad)
             env = {**os.environ, **nested_env, **dict(inst.env), "SPLITSCREEN_INSTANCE": inst.id}
-            with open(self.workdir / f"{inst.id}.log", "wb") as log:
+            with open(self.workdir / f"{inst.id}.log", "ab") as log:  # append: pre_launch output is already there
                 proc = subprocess.Popen(argv, env=env, cwd=inst.cwd, stdout=log, stderr=log, start_new_session=True)
             self.procs[inst.id] = proc
             self.roots[proc.pid] = inst.id

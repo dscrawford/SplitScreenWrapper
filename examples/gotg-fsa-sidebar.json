@@ -7,17 +7,22 @@
   "instances": [
     {
       "id": "fsa",
+      "pre_launch": [
+        ["python3", "-m", "splitscreen.handlers.dolphin_gba",
+         "--config-dir", "/home/daniel/.local/state/gotg/env/env-gamecube/config",
+         "--gba", "1=pad:0", "--gba", "2=pad:1"]
+      ],
       "command": [
         "/home/daniel/.local/state/gotg/app/bin/gotg", "play", "usa.legend_of_zelda_four_swords_adventures",
+        "-C", "Dolphin.Core.SIDevice0=13",
         "-C", "Dolphin.Core.SIDevice1=13",
-        "-C", "Dolphin.Core.SIDevice2=13",
         "-C", "Dolphin.GBA.BIOS=/home/daniel/.local/state/gotg/firmware/gba/gba_bios.bin",
         "-C", "Dolphin.Display.Fullscreen=False"
       ],
       "env": {"GOTG_FULLSCREEN": "0"},
       "windows": [
+        {"id": "gba1", "match": "^GBA1\\b"},
         {"id": "gba2", "match": "^GBA2\\b"},
-        {"id": "gba3", "match": "^GBA3\\b"},
         {"id": "main", "match": "^Dolphin"}
       ]
     }

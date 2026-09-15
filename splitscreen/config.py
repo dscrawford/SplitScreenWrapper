@@ -28,6 +28,7 @@ class Instance:
     binds: tuple[tuple[str, str], ...] = ()  # (host, sandbox) dirs, e.g. per-player saves
     cwd: str | None = None
     windows: tuple[WindowSpec, ...] = ()     # empty = one window, id == instance id, no match rule
+    pre_launch: tuple[tuple[str, ...], ...] = ()  # commands run (and awaited) before the instance; failure aborts
 
     @property
     def window_specs(self) -> tuple[WindowSpec, ...]:
@@ -57,6 +58,9 @@ def instance_from_dict(d: dict) -> Instance:
     _require(all(isinstance(x, str) for x in devices), f"instance {d['id']}: devices must be strings")
     binds = tuple((str(a), str(b)) for a, b in d.get("binds", ()))
     windows = tuple(window_from_dict(d["id"], w) for w in d.get("windows", ()))
+    pre = d.get("pre_launch", [])
+    _require(isinstance(pre, list) and all(isinstance(c, list) and c and all(isinstance(a, str) for a in c) for c in pre),
+             f"instance {d['id']}: pre_launch must be a list of non-empty argv lists")
     return Instance(
         id=d["id"], command=tuple(cmd), devices=devices,
         keyboard_to_pad=d.get("keyboard_to_pad"),
@@ -64,6 +68,7 @@ def instance_from_dict(d: dict) -> Instance:
         gamescope=bool(d.get("gamescope", False)),
         env=tuple((str(k), str(v)) for k, v in d.get("env", {}).items()),
         binds=binds, cwd=d.get("cwd"), windows=windows,
+        pre_launch=tuple(tuple(c) for c in pre),
     )
 
 

@@ -72,3 +72,11 @@ def test_window_ids_unique_across_instances():
             {"id": "a", "command": ["x"], "windows": [{"id": "w"}]},
             {"id": "b", "command": ["y"], "windows": [{"id": "w"}]},
         ]})
+
+
+def test_pre_launch_parsed_and_validated():
+    i = instance_from_dict({"id": "a", "command": ["x"], "pre_launch": [["echo", "hi"], ["true"]]})
+    assert i.pre_launch == (("echo", "hi"), ("true",))
+    for bad in (["echo hi"], [[]], [[1]]):
+        with pytest.raises(ValueError):
+            instance_from_dict({"id": "a", "command": ["x"], "pre_launch": bad})

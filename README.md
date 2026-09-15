@@ -136,6 +136,25 @@ available (SteamOS is immutable: static build, distrobox or nix-portable rather 
 Gaming mode hosts one app inside gamescope; running the nested frame there is plausible but
 untested. Neither has been tried on a Deck yet.
 
+## Controllers for emulator ports (pre_launch handlers)
+
+Device masking decides what an instance *can see*; which port a pad drives inside an
+emulator is the emulator's own config. An instance may list `pre_launch` commands that run,
+in order, before it starts (any failure aborts the session). `splitscreen/handlers/` holds
+such helpers; the first one binds Dolphin's integrated GBAs:
+
+```jsonc
+"pre_launch": [["python3", "-m", "splitscreen.handlers.dolphin_gba",
+                "--config-dir", "/home/me/.local/state/gotg/env/env-gamecube/config",
+                "--gba", "1=pad:0", "--gba", "2=pad:1"]]
+```
+
+`pad:N` is the Nth controller as reported by gotg-pads (found via gotg's own wrapper),
+`sdl:<Name>` is a Dolphin SDL device name verbatim, `keyboard` is Dolphin's stock key map.
+A pad that is not plugged in falls back to the keyboard with a warning instead of blocking
+the launch. `examples/gotg-fsa-sidebar.json` uses this: ports 1 and 2 become GBAs
+(`SIDevice0=13`, `SIDevice1=13`), pad 0 drives GBA1 and pad 1 drives GBA2.
+
 ## Known limits (MVP)
 
 - **Keyboard and mouse per player** only via `kbd2pad` (keyboard becomes a gamepad).
@@ -160,7 +179,8 @@ splitscreen/sandbox.py    bwrap argv builder (tested)
 splitscreen/config.py     JSON -> frozen dataclasses with validation (tested)
 splitscreen/assign.py     window -> slot resolution incl. title regexes (tested)
 splitscreen/kbd2pad.py    keyboard -> virtual gamepad (unit + uinput integration test)
-splitscreen/session.py    orchestrator: nested sway, IPC, placement, settle loop, teardown
+splitscreen/session.py    orchestrator: nested sway, IPC, placement, settle loop, pre_launch, teardown
+splitscreen/handlers/     emulator-specific pre_launch helpers (dolphin_gba: pads -> GBA ports, tested)
 dummy_game/game.py        stand-in multiplayer game
 examples/*.json           grid4, hub5, tri3, isolation2, gotg-fsa (verified), gotg-fsa-sidebar, dolphin-fsa
 docs/*.png                screenshots from the verified runs
