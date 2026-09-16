@@ -15,6 +15,7 @@ import os
 import select
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -55,6 +56,30 @@ def wait_for(path: str, timeout: float) -> bool:
     return False
 
 
+def wait_for_socket(path: str, timeout: float) -> bool:
+    """Wait for a socket something is actually listening on.
+
+    Existing is not enough. A workdir can be reused -- it is a launcher's
+    choice, and the logs are worth keeping in one place -- and a session that
+    was killed rather than closed leaves its socket file behind. Waiting for
+    the path alone is satisfied by that corpse in microseconds, and the connect
+    that follows fails with ECONNREFUSED.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if os.path.exists(path):
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                sock.connect(path)
+                return True
+            except OSError:
+                pass
+            finally:
+                sock.close()
+        time.sleep(0.05)
+    return False
+
+
 def start_nested_sway(workdir: Path, width: int | None, height: int | None) -> tuple[subprocess.Popen, i3ipc.Connection, dict[str, str]]:
     cfg = workdir / "sway.conf"
     envfile = workdir / "env"
@@ -65,15 +90,29 @@ def start_nested_sway(workdir: Path, width: int | None, height: int | None) -> t
     cfg.write_text(text)
 
     sock = str(workdir / "sway.sock")
+    # Whatever a previous session left here is not this one's. Both are waited
+    # on below, so a leftover would be found instantly and believed.
+    for leftover in (sock, str(envfile)):
+        try:
+            os.unlink(leftover)
+        except FileNotFoundError:
+            pass
+
     env = {**os.environ, "WLR_BACKENDS": "wayland", "SWAYSOCK": sock}
     with open(workdir / "sway.log", "wb") as log:  # child keeps its dup; parent does not need the handle
         proc = subprocess.Popen(["sway", "--unsupported-gpu", "-c", str(cfg)], env=env, stdout=log, stderr=log)
-    if not wait_for(sock, 5.0) or not wait_for(str(envfile), 5.0):
+    # Everything from here owns a running compositor: anything that goes wrong
+    # has to take it down, or a failed launch leaves a nested sway behind and
+    # the next one leaves another.
+    try:
+        if not wait_for_socket(sock, 5.0) or not wait_for(str(envfile), 5.0):
+            raise RuntimeError(f"nested sway did not come up; see {workdir / 'sway.log'}")
+        time.sleep(0.2)
+        wl, x = (envfile.read_text().split() + [""])[:2]
+        conn = i3ipc.Connection(socket_path=sock)
+    except Exception:
         terminate_all([proc])
-        raise RuntimeError(f"nested sway did not come up; see {workdir / 'sway.log'}")
-    time.sleep(0.2)
-    wl, x = (envfile.read_text().split() + [""])[:2]
-    conn = i3ipc.Connection(socket_path=sock)
+        raise
     return proc, conn, {"WAYLAND_DISPLAY": wl, "DISPLAY": x}
 
 
