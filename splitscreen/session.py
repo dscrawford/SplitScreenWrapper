@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from types import SimpleNamespace
 import time
 from pathlib import Path
 
@@ -255,6 +256,22 @@ class Runner:
         place(conn, con.id, self.slots[slot_id])
         print(f"[split] placed {slot_id} (con {con.id}, pid {con.pid}, title={con.name!r})", flush=True)
 
+    def place_existing(self) -> None:
+        """Place windows that were already mapped before the loop started.
+
+        Belt to the subscription's braces. With one instance the launch loop
+        returns in milliseconds and nothing can appear inside it; with several,
+        the first game starts seconds before the last -- every instance after
+        the first waits for the one before it -- so its window mapping early is
+        not a corner case, it is what happens every time. That was the bug:
+        player one sat in the middle of the frame, unplaced, while everyone
+        else took their corner.
+        """
+        assert self.conn
+        for con in self.conn.get_tree().descendants():
+            if con.pid and con.id not in self.placed:
+                self.on_window(self.conn, SimpleNamespace(container=con, change="new"))
+
     def settle_loop(self) -> None:
         """Floating clients commit their own initial size after our first placement
         (the compositor honours it), so keep re-asserting the slot geometry for a
@@ -298,9 +315,15 @@ class Runner:
             print(f"[split] nested sway up: {nested_env}, socket {self.workdir / 'sway.sock'}", flush=True)
             float_host_window(self.sway.pid, self.session.width, self.session.height)
             self.relayout()
-            self.launch_instances(nested_env)
+            # Subscribed before anything is launched. `on()` sends the
+            # subscription immediately and sway queues events from that moment,
+            # so a window that maps during the launch loop is still delivered
+            # once main() runs — where before, it produced no event anybody was
+            # listening for.
             self.conn.on("window", self.on_window)
             self.conn.on("output", self.on_output)
+            self.launch_instances(nested_env)
+            self.place_existing()
             self.settle_conn = i3ipc.Connection(socket_path=str(self.workdir / "sway.sock"))
             threading.Thread(target=self.settle_loop, daemon=True).start()
             for sig in (signal.SIGINT, signal.SIGTERM):
