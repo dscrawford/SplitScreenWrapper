@@ -40,9 +40,9 @@ GBA_INTEGRATED = 13
 
 MAX_PLAYERS = 4
 
-# How much of the frame one column of GBAs takes. A GBA screen is 240x160, so a
-# quarter of a 1920 frame is 480 wide — a clean 2x with room for the window
-# decoration a nested compositor may add.
+# How much of the frame one column of GBAs takes. A GBA screen is 240x160: a
+# quarter of a 1920 frame is 480 wide, a clean 2x; a quarter of a Deck's 1280
+# is 320, and Dolphin scales to whatever it gets.
 SIDE_FRACTION = 0.25
 
 # Dolphin names its integrated GBA windows GBA1..GBA4 and its own window after
@@ -198,8 +198,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--dolphin", help="the Dolphin to run a disc with (default: dolphin-emu from PATH)")
     ap.add_argument("--pad", action="append", dest="pads", metavar="DEVICE",
                     help="one per player, in order: pad:N, sdl:<name> or keyboard")
-    ap.add_argument("--width", type=int, default=1920)
-    ap.add_argument("--height", type=int, default=1080)
+    # No default: without both, the frame follows the screen it is shown on
+    # (see screen.py), which is what a Deck's 1280x800 panel needs.
+    ap.add_argument("--width", type=int, default=None)
+    ap.add_argument("--height", type=int, default=None)
     ap.add_argument("-o", "--out", help="write the config here instead of stdout")
     args = ap.parse_args(argv)
 
@@ -211,7 +213,9 @@ def main(argv: list[str]) -> int:
     if args.pads:
         spec["pads"] = args.pads
     try:
-        config = {"frame": {"width": args.width, "height": args.height}, **expand(spec)}
+        config = expand(spec)
+        if args.width and args.height:
+            config = {"frame": {"width": args.width, "height": args.height}, **config}
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 2

@@ -205,6 +205,14 @@ def test_the_command_line_writes_the_same_config(tmp_path, capsys):
     out = tmp_path / "fsa.json"
     assert fsa.main(["--players", "4", "--gc", BASE["gc"], "--gba-bios", BASE["gba_bios"], "-o", str(out)]) == 0
     written = json.loads(out.read_text())
-    assert written["frame"] == {"width": 1920, "height": 1080}
+    # No frame unless one is asked for: the session sizes it to the screen.
+    assert "frame" not in written
     assert written["instances"] == config(players=4)["instances"]
     session_from_dict(written)  # and it is a config the session accepts
+
+
+def test_a_frame_size_given_on_the_command_line_is_kept(tmp_path):
+    out = tmp_path / "fsa.json"
+    assert fsa.main(["--players", "2", "--gc", BASE["gc"], "--gba-bios", BASE["gba_bios"],
+                     "--width", "1280", "--height", "800", "-o", str(out)]) == 0
+    assert json.loads(out.read_text())["frame"] == {"width": 1280, "height": 800}

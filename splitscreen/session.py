@@ -28,6 +28,7 @@ from pathlib import Path
 import i3ipc
 
 from . import layout as layout_mod
+from . import screen
 from .assign import assign_slot
 from .config import Instance, Session, load
 from .procmatch import find_instance
@@ -429,13 +430,20 @@ class Runner:
             place(self.conn, con_id, self.slots[slot_id])
 
     def run(self) -> int:
-        self.sway, self.conn, nested_env, self.sock = start_nested_sway(
-            self.workdir, self.session.width, self.session.height
-        )
+        # The frame is the screen unless the config says otherwise: the
+        # layouts are fractions, and a size written for one machine hangs off
+        # the edge of another. See screen.py.
+        width, height = self.session.width, self.session.height
+        if not (width and height):
+            found = screen.host_screen_size()
+            if found:
+                width, height = found
+                print(f"[split] frame follows the screen: {width}x{height}", flush=True)
+        self.sway, self.conn, nested_env, self.sock = start_nested_sway(self.workdir, width, height)
         # From here on every failure must tear down sway, games and (keyboard-grabbing) helpers.
         try:
             print(f"[split] nested sway up: {nested_env}, socket {self.sock}", flush=True)
-            float_host_window(self.sway.pid, self.session.width, self.session.height)
+            float_host_window(self.sway.pid, width, height)
             self.relayout()
             # Subscribed before anything is launched. `on()` sends the
             # subscription immediately and sway queues events from that moment,
