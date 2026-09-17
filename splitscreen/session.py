@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Mapping
 import select
 import shutil
 import signal
@@ -117,6 +118,24 @@ def wait_for_socket(path: str, timeout: float) -> bool:
     return False
 
 
+def nested_backends(environ: Mapping[str, str]) -> list[str]:
+    """Which wlroots backends the nested sway can try, best first.
+
+    Wayland when there is a parent compositor to nest in; X11 when there is
+    an X server, which under gamescope -- a Steam Deck in Game Mode -- is
+    the one that is reliably there: games are X11 windows to it, and the
+    Wayland socket it exposes is not a compositor wlroots can nest in. Both
+    when both are set, so a parent Wayland that refuses is one attempt and
+    not a dead session.
+    """
+    out = []
+    if environ.get("WAYLAND_DISPLAY"):
+        out.append("wayland")
+    if environ.get("DISPLAY"):
+        out.append("x11")
+    return out or ["wayland"]
+
+
 def start_nested_sway(
     workdir: Path, width: int | None, height: int | None
 ) -> tuple[subprocess.Popen, i3ipc.Connection, dict[str, str], str]:
@@ -125,6 +144,10 @@ def start_nested_sway(
     The socket comes back with it rather than being recomputed by the caller:
     it is not under the workdir, and a second guess at it is a second thing to
     get wrong -- which it was, for the settle loop's own connection.
+
+    One backend at a time, in the order `nested_backends` gives: a sway that
+    does not come up on the first is torn down and tried on the next, and
+    only the last failure is the session's.
     """
     cfg = workdir / "sway.conf"
     envfile = workdir / "env"
@@ -143,22 +166,35 @@ def start_nested_sway(
         except FileNotFoundError:
             pass
 
-    env = {**os.environ, "WLR_BACKENDS": "wayland", "SWAYSOCK": sock}
-    with open(workdir / "sway.log", "wb") as log:  # child keeps its dup; parent does not need the handle
-        proc = subprocess.Popen(["sway", "--unsupported-gpu", "-c", str(cfg)], env=env, stdout=log, stderr=log)
-    # Everything from here owns a running compositor: anything that goes wrong
-    # has to take it down, or a failed launch leaves a nested sway behind and
-    # the next one leaves another.
-    try:
-        if not wait_for_socket(sock, 5.0) or not wait_for(str(envfile), 5.0):
-            raise RuntimeError(f"nested sway did not come up; see {workdir / 'sway.log'}")
-        time.sleep(0.2)
-        wl, x = (envfile.read_text().split() + [""])[:2]
-        conn = i3ipc.Connection(socket_path=sock)
-    except Exception:
-        terminate_all([proc])
-        raise
-    return proc, conn, {"WAYLAND_DISPLAY": wl, "DISPLAY": x}, sock
+    backends = nested_backends(os.environ)
+    for attempt, backend in enumerate(backends, 1):
+        env = {**os.environ, "WLR_BACKENDS": backend, "SWAYSOCK": sock}
+        with open(workdir / "sway.log", "ab") as log:  # child keeps its dup; parent does not need the handle
+            log.write(f"[split] starting nested sway on the {backend} backend\n".encode())
+            log.flush()
+            proc = subprocess.Popen(["sway", "--unsupported-gpu", "-c", str(cfg)], env=env, stdout=log, stderr=log)
+        # Everything from here owns a running compositor: anything that goes
+        # wrong has to take it down, or a failed launch leaves a nested sway
+        # behind and the next one leaves another.
+        try:
+            if not wait_for_socket(sock, 5.0) or not wait_for(str(envfile), 5.0):
+                raise RuntimeError(f"nested sway did not come up on the {backend} backend; see {workdir / 'sway.log'}")
+            time.sleep(0.2)
+            wl, x = (envfile.read_text().split() + [""])[:2]
+            conn = i3ipc.Connection(socket_path=sock)
+        except Exception:
+            terminate_all([proc])
+            if attempt < len(backends):
+                print(f"[split] nested sway did not come up on {backend}; trying {backends[attempt]}", flush=True)
+                for leftover in (sock, str(envfile)):
+                    try:
+                        os.unlink(leftover)
+                    except FileNotFoundError:
+                        pass
+                continue
+            raise
+        return proc, conn, {"WAYLAND_DISPLAY": wl, "DISPLAY": x}, sock
+    raise RuntimeError("no backend for the nested sway")  # unreachable: the list is never empty
 
 
 def _signal_tree(p: subprocess.Popen, sig: int) -> None:
