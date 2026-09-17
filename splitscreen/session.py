@@ -47,6 +47,43 @@ bindsym Mod4+Shift+q exit
 """
 
 
+# A unix socket path is copied into sockaddr_un.sun_path, which is 108 bytes
+# including its terminator. Nothing warns when it does not fit: sway strncpy's
+# into it, so the kernel binds the truncated name and the compositor comes up
+# perfectly on a socket nobody is looking for.
+SUN_PATH_MAX = 107
+
+
+def ipc_socket_path(workdir: Path) -> Path:
+    """Where the nested sway should listen.
+
+    The runtime directory rather than the workdir. A launcher picks the workdir
+    and is entitled to a descriptive one -- GOTG uses the game's environment,
+    which for Four Swords Adventures is 105 characters before a filename is
+    added -- and `<workdir>/sway.sock` is then 115 bytes. The kernel truncated
+    that to `<workdir>/s`, sway happily listened on it, and the session waited
+    five seconds for a name that could not appear and gave up.
+
+    Keyed by pid, so two sessions cannot collide and nothing is left for the
+    next one to find.
+    """
+    base = Path(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir())
+    home = base / "splitscreen"
+    try:
+        home.mkdir(parents=True, exist_ok=True)
+        candidate = home / f"sway-{os.getpid()}.sock"
+        if len(str(candidate)) <= SUN_PATH_MAX:
+            return candidate
+    except OSError:
+        pass
+    # Somewhere short, whatever is going on: a socket that does not fit is a
+    # session that cannot start.
+    short = Path(tempfile.mkdtemp(prefix="ssw-")) / "s.sock"
+    if len(str(short)) > SUN_PATH_MAX:
+        raise RuntimeError(f"nowhere to put a socket shorter than {SUN_PATH_MAX} bytes")
+    return short
+
+
 def wait_for(path: str, timeout: float) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -89,7 +126,7 @@ def start_nested_sway(workdir: Path, width: int | None, height: int | None) -> t
     text += f"exec sh -c 'echo \"$WAYLAND_DISPLAY $DISPLAY\" > {envfile}'\n"
     cfg.write_text(text)
 
-    sock = str(workdir / "sway.sock")
+    sock = str(ipc_socket_path(workdir))
     # Whatever a previous session left here is not this one's. Both are waited
     # on below, so a leftover would be found instantly and believed.
     for leftover in (sock, str(envfile)):
