@@ -117,7 +117,15 @@ def wait_for_socket(path: str, timeout: float) -> bool:
     return False
 
 
-def start_nested_sway(workdir: Path, width: int | None, height: int | None) -> tuple[subprocess.Popen, i3ipc.Connection, dict[str, str]]:
+def start_nested_sway(
+    workdir: Path, width: int | None, height: int | None
+) -> tuple[subprocess.Popen, i3ipc.Connection, dict[str, str], str]:
+    """Start the compositor, and say where it is listening.
+
+    The socket comes back with it rather than being recomputed by the caller:
+    it is not under the workdir, and a second guess at it is a second thing to
+    get wrong -- which it was, for the settle loop's own connection.
+    """
     cfg = workdir / "sway.conf"
     envfile = workdir / "env"
     text = NESTED_CONFIG
@@ -150,7 +158,7 @@ def start_nested_sway(workdir: Path, width: int | None, height: int | None) -> t
     except Exception:
         terminate_all([proc])
         raise
-    return proc, conn, {"WAYLAND_DISPLAY": wl, "DISPLAY": x}
+    return proc, conn, {"WAYLAND_DISPLAY": wl, "DISPLAY": x}, sock
 
 
 def _signal_tree(p: subprocess.Popen, sig: int) -> None:
@@ -385,10 +393,12 @@ class Runner:
             place(self.conn, con_id, self.slots[slot_id])
 
     def run(self) -> int:
-        self.sway, self.conn, nested_env = start_nested_sway(self.workdir, self.session.width, self.session.height)
+        self.sway, self.conn, nested_env, self.sock = start_nested_sway(
+            self.workdir, self.session.width, self.session.height
+        )
         # From here on every failure must tear down sway, games and (keyboard-grabbing) helpers.
         try:
-            print(f"[split] nested sway up: {nested_env}, socket {self.workdir / 'sway.sock'}", flush=True)
+            print(f"[split] nested sway up: {nested_env}, socket {self.sock}", flush=True)
             float_host_window(self.sway.pid, self.session.width, self.session.height)
             self.relayout()
             # Subscribed before anything is launched. `on()` sends the
@@ -400,7 +410,7 @@ class Runner:
             self.conn.on("output", self.on_output)
             self.launch_instances(nested_env)
             self.place_existing()
-            self.settle_conn = i3ipc.Connection(socket_path=str(self.workdir / "sway.sock"))
+            self.settle_conn = i3ipc.Connection(socket_path=self.sock)
             threading.Thread(target=self.settle_loop, daemon=True).start()
             for sig in (signal.SIGINT, signal.SIGTERM):
                 signal.signal(sig, lambda *_: self.conn.main_quit())

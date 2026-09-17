@@ -74,3 +74,19 @@ def test_a_short_workdir_gets_the_same_treatment():
     # runtime directory is where a socket belongs whatever the workdir is.
     short = ipc_socket_path(Path("/tmp/x"))
     assert short == ipc_socket_path(FOUR_SWORDS)
+
+
+def test_nothing_recomputes_the_socket_path():
+    """The settle loop opened a second connection of its own, and worked out
+    where to point it by rebuilding `<workdir>/sway.sock`. That is the exact
+    path this fix stopped using, so the first fix would have moved the failure
+    rather than removing it: sway up, session placed, and the settle thread
+    dead on a socket that was never there."""
+    import inspect
+
+    from splitscreen import session
+
+    source = inspect.getsource(session)
+    body = source.replace(inspect.getdoc(session.ipc_socket_path) or "", "")
+    assert 'workdir / "sway.sock"' not in body
+    assert "workdir / 'sway.sock'" not in body
