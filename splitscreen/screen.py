@@ -49,12 +49,20 @@ def parse_xrandr(text: str) -> tuple[int, int] | None:
     return None
 
 
+# Which xrandr to ask. The one on PATH, unless SPLITSCREEN_XRANDR names
+# another: a test harness pretending to be a machine with a different panel
+# hands over that machine's xrandr, verbatim, and a launcher's PATH prefix
+# would otherwise win over anything it put in front.
+XRANDR_ENV = "SPLITSCREEN_XRANDR"
+
+
 def _xrandr(environ: Mapping[str, str]) -> tuple[int, int] | None:
     if not environ.get("DISPLAY"):
         return None
     try:
         done = subprocess.run(
-            ["xrandr", "--current"], capture_output=True, text=True, timeout=5, env=dict(environ), check=False
+            [environ.get(XRANDR_ENV) or "xrandr", "--current"],
+            capture_output=True, text=True, timeout=5, env=dict(environ), check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return None

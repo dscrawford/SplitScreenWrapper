@@ -4,6 +4,8 @@
 a nested compositor hanging off the edge with a Game Boy past the bezel.
 """
 
+import os
+
 from splitscreen import screen
 
 DECK_DESKTOP = """Screen 0: minimum 320 x 200, current 1280 x 800, maximum 16384 x 16384
@@ -107,3 +109,13 @@ def test_a_frame_the_config_names_wins_over_the_screen(monkeypatch):
     except RuntimeError:
         pass
     assert seen["size"] == (1920, 1080)
+
+
+def test_a_named_xrandr_is_the_one_asked(tmp_path):
+    # A harness pretending to be a Deck hands over the Deck's xrandr; the one
+    # on PATH would answer for the machine the harness is really on.
+    fake = tmp_path / "xrandr"
+    fake.write_text("#!/bin/sh\ncat <<'EOF'\n" + DECK_ROTATED + "EOF\n")
+    fake.chmod(0o755)
+    env = {"DISPLAY": ":9", "SPLITSCREEN_XRANDR": str(fake), "PATH": os.environ.get("PATH", "")}
+    assert screen.host_screen_size(env) == (1280, 800)
