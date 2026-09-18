@@ -20,24 +20,29 @@ import re
 import subprocess
 from collections.abc import Mapping
 
+# "eDP-1 connected primary 1280x800+0+0 right (normal left ...) 100mm x 160mm"
+# -- an output's geometry on the screen, which is what the frame should fill.
+_CONNECTED = re.compile(r"^(\S+) connected (primary )?(\d+)x(\d+)\+\d+\+\d+", re.MULTILINE)
 # "Screen 0: minimum 320 x 200, current 1280 x 800, maximum 16384 x 16384"
 _CURRENT = re.compile(r"\bcurrent\s+(\d+)\s*x\s*(\d+)")
-# "   1280x800      60.00*+   59.99" -- the mode in use carries the star.
-_STARRED = re.compile(r"^\s*(\d+)x(\d+)\s.*\*", re.MULTILINE)
 
 
 def parse_xrandr(text: str) -> tuple[int, int] | None:
     """The screen size out of `xrandr --current`.
 
-    The starred mode first: on a multi-monitor X screen the "current" figure
-    is the whole virtual desktop, and a frame that size straddles two
-    monitors. The virtual size is the fallback for an xrandr that lists no
-    modes -- Xwayland under gamescope reports one output and no star on some
-    versions.
+    An output's geometry, the primary one first: that is the size it takes
+    on the screen after rotation, and one monitor's rather than the desktop
+    spanning all of them. Not the starred mode -- a Steam Deck's panel is
+    800x1280 and is shown rotated, so its mode is portrait while its
+    geometry is 1280x800, and a frame sized from the mode came up on its
+    side. The "current" figure is the fallback for an xrandr that lists no
+    outputs it can size.
     """
-    starred = _STARRED.search(text)
-    if starred:
-        return int(starred.group(1)), int(starred.group(2))
+    outputs = _CONNECTED.findall(text)
+    if outputs:
+        primary = [o for o in outputs if o[1]]
+        _, _, width, height = (primary or outputs)[0]
+        return int(width), int(height)
     current = _CURRENT.search(text)
     if current:
         return int(current.group(1)), int(current.group(2))

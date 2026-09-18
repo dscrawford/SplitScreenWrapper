@@ -23,16 +23,38 @@ GAMESCOPE_NO_MODES = """Screen 0: minimum 16 x 16, current 1280 x 800, maximum 3
 XWAYLAND0 connected 1280x800+0+0 0mm x 0mm
 """
 
+# The Deck's own panel under KDE's Xwayland, verbatim: a portrait panel shown
+# rotated, so the mode says 800x1280 and the screen is 1280x800.
+DECK_ROTATED = """Screen 0: minimum 16 x 16, current 1280 x 800, maximum 32767 x 32767
+eDP-1 connected primary 1280x800+0+0 right (normal left inverted right x axis y axis) 100mm x 160mm
+   800x1280      89.87*+
+   800x600       89.85  
+"""
 
-def test_the_deck_panel_is_read_off_its_starred_mode():
+# No geometry on any output: only the virtual size is left to go by.
+NO_GEOMETRY = """Screen 0: minimum 16 x 16, current 1920 x 1080, maximum 32767 x 32767
+default connected (normal left inverted right x axis y axis) 0mm x 0mm
+"""
+
+
+def test_the_deck_panel_is_read_off_its_geometry():
     assert screen.parse_xrandr(DECK_DESKTOP) == (1280, 800)
+
+
+def test_a_rotated_panel_is_its_size_on_the_screen_not_its_mode():
+    # Measured on a Deck: the frame came up 800x1280, on its side.
+    assert screen.parse_xrandr(DECK_ROTATED) == (1280, 800)
+
+
+def test_an_output_with_no_geometry_falls_back_to_the_virtual_size():
+    assert screen.parse_xrandr(NO_GEOMETRY) == (1920, 1080)
 
 
 def test_two_monitors_give_the_one_in_use_not_the_desktop_spanning_both():
     assert screen.parse_xrandr(TWO_MONITORS) == (2560, 1440)
 
 
-def test_gamescope_with_no_mode_list_falls_back_to_the_current_size():
+def test_gamescope_with_no_mode_list_is_read_off_its_output():
     assert screen.parse_xrandr(GAMESCOPE_NO_MODES) == (1280, 800)
 
 
