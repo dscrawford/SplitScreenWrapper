@@ -80,3 +80,46 @@ def test_pre_launch_parsed_and_validated():
     for bad in (["echo hi"], [[]], [[1]]):
         with pytest.raises(ValueError):
             instance_from_dict({"id": "a", "command": ["x"], "pre_launch": bad})
+
+
+# --- gamescope --------------------------------------------------------------
+
+
+def test_gamescope_is_per_instance():
+    s = session_from_dict({"instances": [
+        {"id": "a", "command": ["x"], "gamescope": True},
+        {"id": "b", "command": ["x"]},
+    ]})
+    assert [i.gamescope for i in s.instances] == [True, False]
+
+
+def test_a_session_wide_gamescope_reaches_every_instance():
+    # The reason to want it -- a game that sizes its own window -- belongs to
+    # the game, and every instance is the same game.
+    s = session_from_dict({"gamescope": True, "instances": [
+        {"id": "a", "command": ["x"]}, {"id": "b", "command": ["x"]},
+    ]})
+    assert all(i.gamescope for i in s.instances)
+
+
+def test_an_instance_overrides_the_session_wide_gamescope():
+    s = session_from_dict({"gamescope": True, "instances": [
+        {"id": "a", "command": ["x"], "gamescope": False}, {"id": "b", "command": ["x"]},
+    ]})
+    assert [i.gamescope for i in s.instances] == [False, True]
+
+
+def test_gamescope_is_refused_for_an_instance_with_several_windows():
+    # gamescope presents one window, so the other slots would stay empty.
+    with pytest.raises(ValueError, match="one window"):
+        instance_from_dict({"id": "a", "command": ["x"], "gamescope": True,
+                            "windows": [{"id": "main"}, {"id": "gba1", "match": "GBA1"}]})
+
+
+def test_a_session_wide_gamescope_skips_a_multi_window_instance():
+    # Inherited rather than asked for: not an error, just not for that one.
+    s = session_from_dict({"gamescope": True, "instances": [
+        {"id": "a", "command": ["x"], "windows": [{"id": "main"}, {"id": "gba1", "match": "GBA1"}]},
+        {"id": "b", "command": ["x"]},
+    ]})
+    assert [i.gamescope for i in s.instances] == [False, True]

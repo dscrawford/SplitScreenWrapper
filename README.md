@@ -27,13 +27,14 @@ host compositor (any Wayland desktop)
 | Forcing the game to a slot size | Optional per-instance `gamescope -W w -H h --force-windows-fullscreen`. | The game sees a "monitor" of exactly the slot size; fullscreen games just work. |
 | Gamepad isolation | `bwrap --tmpfs /dev/input` plus `--dev-bind` of only the assigned nodes; other `/dev/hidraw*` masked with `/dev/null` (`splitscreen.sandbox`). Same trick as PartyDeck. | SDL/evdev/hidapi never enumerate the other players' devices. Gamepads keep working unfocused. |
 | Keyboards as controllers | `splitscreen.kbd2pad`: grabs a keyboard (EVIOCGRAB), emits a uinput gamepad that identifies as an Xbox 360 pad, and only that node is bound into the sandbox. | The game just sees one gamepad. No game-side key mapping. |
+| Keeping a game in its slot | The nested sway refuses fullscreen at map time, and `splitscreen.session` re-places any window that fullscreens or resizes itself, for as long as the session runs. | A game's own video options cannot take the frame; it is undone within a quarter second. |
 | Layout | Pure functions in `splitscreen.layout`: `grid` (any N) and `hub` (center + 4 corners). Recomputed from the real output size, so host tiling/resizing is fine. | Layout never touches the game. |
 
 ## Run it
 
 ```bash
 nix-shell                                   # python (pygame-ce, evdev, i3ipc, pytest), sway, gamescope, bwrap, grim
-python3 -m pytest -q tests                  # 49 tests, incl. a uinput round-trip if /dev/uinput is writable
+python3 -m pytest -q tests                  # 149 tests, incl. a uinput round-trip if /dev/uinput is writable
 python3 -m splitscreen.session examples/grid4.json
 python3 -m splitscreen.session examples/hub5.json
 python3 -m splitscreen.session examples/isolation2.json   # one sandboxed instance, one under gamescope
@@ -52,13 +53,14 @@ which gamepads that instance can see, which makes isolation visible.
 {
   "frame": {"width": 1280, "height": 720},          // requested host window size (best effort)
   "layout": {"name": "hub", "center_fraction": 0.5}, // or "grid"; a "mode" can write this instead
+  "gamescope": true,                                // default for every instance below
   "instances": [
     {
       "id": "p1",
       "command": ["./game", "--some-flag"],
       "cwd": "/path/to/game",                         // optional
       "env": {"SDL_JOYSTICK_HIDAPI": "0"},            // optional
-      "gamescope": true,                              // wrap in gamescope sized to the slot
+      "gamescope": true,                              // wrap in gamescope sized to the slot (overrides the session default)
       "devices": ["/dev/input/by-id/usb-...-event-joystick"],   // only these evdev nodes are visible
       "keyboard_to_pad": "/dev/input/by-id/usb-...-event-kbd",  // convert this keyboard into a private pad
       "binds": [["/home/me/saves/p1", "/home/me/.config/game"]] // per-player save dirs (bwrap --bind)
@@ -69,6 +71,15 @@ which gamepads that instance can see, which makes isolation visible.
 
 Slot order = instance order, then window order within an instance. For `hub`, the first
 slot is the center.
+
+`gamescope` is worth turning on session-wide for a game that insists on sizing its own
+window: it sees a "monitor" of exactly the slot size, so its fullscreen and its
+resolution setting both stay inside the slot and never reach the frame. The cost is a
+GPU copy per instance and gamescope in `PATH`. Without it, `splitscreen.session` still
+puts an escaped window back (see below) -- that is repair after the fact, this is
+prevention. An instance that opens *several* windows cannot use it: gamescope presents
+one window, so the other slots would stay empty. Asking for it there is a config error;
+the session-wide default simply skips such an instance (the Dolphin + GBA modes).
 
 ### Layouts
 
