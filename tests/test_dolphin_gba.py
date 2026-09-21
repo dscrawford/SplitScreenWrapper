@@ -1,7 +1,7 @@
 import pytest
 from splitscreen.handlers import dolphin_gba
-from splitscreen.handlers.dolphin_gba import (KEYBOARD_DEVICE, gba_section, rewrite, parse_device,
-                                              pads_from_gotg, players_from_gotg)
+from splitscreen.handlers.dolphin_gba import (KEYBOARD_DEVICE, clones_from_gotg, gba_section, rewrite,
+                                              parse_device, pads_from_gotg, players_from_gotg)
 
 GOTG_JSON = '[{"name": "Steam Controller", "slot": 0, "gamepad": true, "map": {}}, {"name": "Xbox 360 Controller", "slot": 1, "gamepad": true, "map": {}}, {"name": "Mouse", "slot": 2, "gamepad": false, "map": null}]'
 
@@ -113,3 +113,65 @@ def test_enumeration_is_the_fallback_when_gotg_cannot_answer(monkeypatch):
     monkeypatch.setenv("GOTG_PADS", "/usr/bin/gotg-pads")
     monkeypatch.setattr(dolphin_gba, "_run", lambda argv, timeout=20: "" if "controllers" in argv else INTERLEAVED)
     assert dolphin_gba.detect_pads() == pads_from_gotg(INTERLEAVED)
+
+
+# --- padmap's clones, found by GUID ------------------------------------------
+#
+# Every GUID below was read off gotg-pads on a machine with two pads seated,
+# 2026-09-21: an Xbox pad as player one and a pad SDL has never heard of as
+# player two. SDL renamed the first clone and left the second alone, which is
+# the whole reason this is matched on the GUID.
+
+SEATED_JSON = """[
+ {"name": "Xbox 360 Controller", "guid": "050018dc5e0400008e02000030110000",
+  "slot": 0, "gamepad": true, "map": {}},
+ {"name": "FSA Other Pad", "guid": "0300eee3aa2a0000bb5b000001000000",
+  "slot": 0, "gamepad": true, "map": {}},
+ {"name": "Xbox 360 Controller", "guid": "0300c9a75e0400008e02000001000000",
+  "slot": 1, "gamepad": true, "map": {}},
+ {"name": "padmap Player 2", "guid": "030089a6aa2a0000bb5b000002000000",
+  "slot": 0, "gamepad": true, "map": {}}
+]"""
+
+
+def test_a_renamed_clone_is_still_found_by_its_guid():
+    # Player one's clone mirrors an Xbox pad, so SDL calls it "Xbox 360
+    # Controller" and the kernel's "padmap Player 1" never reaches Dolphin.
+    clones = clones_from_gotg(SEATED_JSON)
+    assert clones[1] == "SDL/1/Xbox 360 Controller"
+
+
+def test_a_clone_sdl_left_alone_is_found_too():
+    assert clones_from_gotg(SEATED_JSON)[2] == "SDL/0/padmap Player 2"
+
+
+def test_the_pads_behind_the_clones_are_not_mistaken_for_them():
+    # The raw Xbox pad enumerates first and is named identically to its own
+    # clone; only the GUID tells them apart.
+    clones = clones_from_gotg(SEATED_JSON)
+    assert "SDL/0/Xbox 360 Controller" not in clones.values()
+    assert set(clones) == {1, 2}
+
+
+def test_padmap_specs_resolve_to_those_devices():
+    clones = clones_from_gotg(SEATED_JSON)
+    assert parse_device("padmap:1", (), clones=clones) == "SDL/1/Xbox 360 Controller"
+    assert parse_device("padmap:2", (), clones=clones) == "SDL/0/padmap Player 2"
+
+
+def test_a_player_padmap_never_published_falls_back_to_the_keyboard():
+    said = []
+    assert parse_device("padmap:3", (), warn=said.append, clones=clones_from_gotg(SEATED_JSON)) == KEYBOARD_DEVICE
+    assert said and "player 3" in said[0]
+
+
+def test_nothing_published_at_all_is_not_a_crash():
+    assert clones_from_gotg("not json") == {}
+    assert parse_device("padmap:1", (), warn=lambda _m: None, clones={}) == KEYBOARD_DEVICE
+
+
+def test_a_bad_player_number_is_refused():
+    import pytest
+
+    with pytest.raises(ValueError):
+        parse_device("padmap:one", ())
