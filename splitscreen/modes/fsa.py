@@ -197,7 +197,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--config-dir", help="where Dolphin keeps dolphin-emu/GBA.ini")
     ap.add_argument("--dolphin", help="the Dolphin to run a disc with (default: dolphin-emu from PATH)")
     ap.add_argument("--pad", action="append", dest="pads", metavar="DEVICE",
-                    help="one per player, in order: pad:N, sdl:<name> or keyboard")
+                    help="one per player, in order: danstick:N, pad:N, sdl:<name> or keyboard")
     # No default: without both, the frame follows the screen it is shown on
     # (see screen.py), which is what a Deck's 1280x800 panel needs.
     ap.add_argument("--width", type=int, default=None)

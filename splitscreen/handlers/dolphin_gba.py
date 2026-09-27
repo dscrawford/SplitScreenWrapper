@@ -10,7 +10,8 @@ this runs as a `pre_launch` step of a split-screen instance:
 Device forms: `pad:N` = the Nth controller in player order — gotg's own seating
 (`gotg controllers order`) where that is available, SDL's enumeration order
 otherwise —
-`padmap:N` = the pad padmap published for player N, found by its GUID.
+`danstick:N` = the pad danstick published for player N, found by its GUID
+(`padmap:N` is the same thing under danstick's old name).
 `sdl:<Name>` = "SDL/0/<Name>" verbatim, `keyboard` = Dolphin's stock key map.
 A `pad:N` that is not plugged in falls back to the keyboard with a warning, so
 a missing second controller never blocks the launch.
@@ -76,13 +77,19 @@ def rewrite(existing: str, sections: Mapping[int, str]) -> str:
     return text
 
 
-# padmap names its clones "padmap Player N" -- and SDL does not pass that on.
+# danstick names its clones "danstick Player N" -- and SDL does not pass that on.
 # A clone mirrors the identity of the pad behind it, so SDL finds 045e:028e in
 # its own database and calls the clone "Xbox 360 Controller"; the kernel's
 # name never reaches Dolphin. Four Swords Adventures was bound by that name
 # and so bound nothing at all. What survives is the GUID: SDL takes a CRC-16
 # of the real name before it renames anything, and puts it in bytes 2 and 3.
-VIRTUAL_PREFIX = "padmap Player "
+#
+# danstick was padmap until 2026-09, and its clones were "padmap Player N";
+# both are looked for, so a daemon from before the rename still binds.
+VIRTUAL_PREFIXES = ("danstick Player ", "padmap Player ")
+
+# What a spec for one of those clones starts with: the new name and the old.
+CLONE_SPECS = ("danstick:", "padmap:")
 
 
 def _crc16(data: bytes) -> int:
@@ -108,7 +115,7 @@ def _name_crc(guid: str) -> int | None:
 
 
 def clones_from_gotg(output: str, players: int = 8) -> dict[int, str]:
-    """Pure: gotg-pads JSON -> {player: Dolphin device string} for padmap's clones.
+    """Pure: gotg-pads JSON -> {player: Dolphin device string} for danstick's clones.
 
     By GUID rather than by name, because the name is the thing SDL replaces.
     The device string carries the slot, which is how Dolphin tells two pads
@@ -118,15 +125,18 @@ def clones_from_gotg(output: str, players: int = 8) -> dict[int, str]:
         rows = json.loads(output)
     except ValueError:
         return {}
-    wanted = {_crc16(f"{VIRTUAL_PREFIX}{n}".encode()): n for n in range(1, players + 1)}
+    wanted = {
+        _crc16(f"{prefix}{n}".encode()): n for prefix in VIRTUAL_PREFIXES for n in range(1, players + 1)
+    }
     out: dict[int, str] = {}
     for row in rows:
         if not isinstance(row, dict) or not row.get("gamepad"):
             continue
         player = wanted.get(_name_crc(row.get("guid", "")))
-        if player is None and str(row.get("name", "")).startswith(VIRTUAL_PREFIX):
+        prefix = next((p for p in VIRTUAL_PREFIXES if str(row.get("name", "")).startswith(p)), None)
+        if player is None and prefix is not None:
             # A clone SDL did not rename says so itself.
-            tail = str(row["name"])[len(VIRTUAL_PREFIX):].strip()
+            tail = str(row["name"])[len(prefix):].strip()
             player = int(tail) if tail.isdigit() else None
         if player is not None and player not in out:
             out[player] = f"SDL/{int(row.get('slot', 0))}/{row.get('name', 'Unknown')}"
@@ -137,15 +147,16 @@ def parse_device(spec: str, pads: Sequence[str], warn=print, clones: dict[int, s
     """Pure given `pads` (Dolphin device strings in slot order) and `clones`."""
     if spec == "keyboard":
         return KEYBOARD_DEVICE
-    if spec.startswith("padmap:"):
+    clone = next((p for p in CLONE_SPECS if spec.startswith(p)), None)
+    if clone is not None:
         try:
-            player = int(spec[7:])
+            player = int(spec[len(clone):])
         except ValueError as exc:
             raise ValueError(f"bad player number in {spec!r}") from exc
         found = (clones or {}).get(player)
         if found:
             return found
-        warn(f"dolphin_gba: padmap has published no pad for player {player}; using keyboard")
+        warn(f"dolphin_gba: danstick has published no pad for player {player}; using keyboard")
         return KEYBOARD_DEVICE
     if spec.startswith("sdl:"):
         return f"SDL/0/{spec[4:]}"
@@ -158,7 +169,7 @@ def parse_device(spec: str, pads: Sequence[str], warn=print, clones: dict[int, s
             return pads[idx]
         warn(f"dolphin_gba: pad:{idx} is not connected ({len(pads)} pad(s) found); using keyboard")
         return KEYBOARD_DEVICE
-    raise ValueError(f"unknown device spec {spec!r}; use pad:N, sdl:<name> or keyboard")
+    raise ValueError(f"unknown device spec {spec!r}; use danstick:N, pad:N, sdl:<name> or keyboard")
 
 
 def pads_from_gotg(output: str) -> tuple[str, ...]:
@@ -251,7 +262,7 @@ def detect_pads() -> tuple[str, ...]:
 
 
 def detect_clones() -> dict[int, str]:
-    """padmap's published pads, by player, as Dolphin device strings.
+    """danstick's published pads, by player, as Dolphin device strings.
 
     Straight from gotg-pads: the GUID is what identifies a clone and
     `gotg controllers order` does not carry it.
@@ -265,7 +276,7 @@ def detect_clones() -> dict[int, str]:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config-dir", required=True, help="XDG config dir Dolphin uses (contains dolphin-emu/)")
-    ap.add_argument("--gba", action="append", default=[], metavar="PORT=DEVICE", help="e.g. 1=padmap:1, 2=pad:0, 3=keyboard, 4=sdl:Xbox 360 Controller")
+    ap.add_argument("--gba", action="append", default=[], metavar="PORT=DEVICE", help="e.g. 1=danstick:1, 2=pad:0, 3=keyboard, 4=sdl:Xbox 360 Controller")
     ap.add_argument("--pads-bin", help="override gotg-pads binary (default: $GOTG_PADS or PATH)")
     args = ap.parse_args(argv)
     if args.pads_bin:

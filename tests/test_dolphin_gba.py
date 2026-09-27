@@ -175,3 +175,31 @@ def test_a_bad_player_number_is_refused():
 
     with pytest.raises(ValueError):
         parse_device("padmap:one", ())
+    with pytest.raises(ValueError):
+        parse_device("danstick:one", ())
+
+
+# --- danstick, as padmap is now called ----------------------------------------
+#
+# The same seating after the rename (2026-09): the clones are "danstick Player
+# N", and GOTG asks for them as `danstick:N`. Four Swords Adventures stopped
+# launching when GOTG changed its spec and this did not.
+
+RENAMED_JSON = SEATED_JSON.replace("padmap Player 2", "danstick Player 2").replace(
+    "0300c9a7", "0300{:02x}{:02x}".format(*dolphin_gba._crc16(b"danstick Player 1").to_bytes(2, "little"))
+).replace(
+    "030089a6", "0300{:02x}{:02x}".format(*dolphin_gba._crc16(b"danstick Player 2").to_bytes(2, "little"))
+)
+
+
+def test_danstick_specs_resolve_to_danstick_clones():
+    clones = clones_from_gotg(RENAMED_JSON)
+    assert parse_device("danstick:1", (), clones=clones) == "SDL/1/Xbox 360 Controller"
+    assert parse_device("danstick:2", (), clones=clones) == "SDL/0/danstick Player 2"
+    assert parse_device("padmap:1", (), clones=clones) == "SDL/1/Xbox 360 Controller", "the old spec still works"
+
+
+def test_a_danstick_player_never_published_is_the_keyboard_and_says_so():
+    said = []
+    assert parse_device("danstick:3", (), warn=said.append, clones={}) == KEYBOARD_DEVICE
+    assert said and "danstick" in said[0]
