@@ -60,7 +60,7 @@ def ipc_socket_path(workdir: Path) -> Path:
     """Where the nested sway should listen.
 
     The runtime directory rather than the workdir. A launcher picks the workdir
-    and is entitled to a descriptive one -- GOTG uses the game's environment,
+    and is entitled to a descriptive one -- one launcher used the game's environment,
     which for Four Swords Adventures is 105 characters before a filename is
     added -- and `<workdir>/sway.sock` is then 115 bytes. The kernel truncated
     that to `<workdir>/s`, sway happily listened on it, and the session waited

@@ -1,6 +1,6 @@
 """Little layout editor: drag slots around, resize them, snap to edges, save.
 
-    python3 -m splitscreen.editor examples/gotg-fsa.json           # edit that config's layout
+    python3 -m splitscreen.editor examples/hub5.json               # edit that config's layout
     python3 -m splitscreen.editor --slots 3 --preset sidebar out.json
 
 Mouse: drag a slot to move it, drag its bottom-right corner to resize.

@@ -7,7 +7,7 @@ between the television and the little one depending on where you are standing.
 
 So the mode takes two sources and a number of players and writes the rest:
 
-    gc        the game — a gotg entry id, or a disc image for a plain Dolphin
+    gc        the game's disc image
     gba_bios  the GBA BIOS Dolphin needs before it will boot an integrated GBA
     players   1 to 4
 
@@ -51,12 +51,9 @@ SIDE_FRACTION = 0.25
 GBA_TITLE = r"^GBA{port}\b"
 MAIN_TITLE = r"^Dolphin|^Four Swords"
 
-# Where gotg keeps the Dolphin config for its GameCube environment, and the
-# wrapper it reaches its own binaries through.
-GOTG_WRAPPER = "~/.local/state/gotg/app/bin/gotg"
-GOTG_CONFIG_DIR = "~/.local/state/gotg/env/env-gamecube/config"
-
-DISC_SUFFIXES = (".iso", ".rvz", ".gcm", ".ciso", ".gcz", ".dol", ".elf")
+# Where a stock Dolphin keeps dolphin-emu/GBA.ini: the XDG config directory. A
+# launcher with a Dolphin of its own says where that one looks (`config_dir`).
+DEFAULT_CONFIG_DIR = "~/.config"
 
 
 def _require(cond: bool, message: str) -> None:
@@ -128,9 +125,9 @@ def windows(players: int) -> tuple[dict, ...]:
     return (*gbas, {"id": "main", "match": MAIN_TITLE})
 
 
-def _command(spec: dict, players: int) -> tuple[list[str], dict[str, str]]:
+def _command(spec: dict, players: int) -> list[str]:
     gc = spec.get("gc")
-    _require(isinstance(gc, str) and gc, "needs a 'gc' source: a gotg entry id or a disc image path")
+    _require(isinstance(gc, str) and gc, "needs a 'gc' source: the game's disc image")
     gba_bios = spec.get("gba_bios")
     _require(isinstance(gba_bios, str) and gba_bios, "needs a 'gba_bios': the BIOS Dolphin boots a GBA with")
 
@@ -138,15 +135,10 @@ def _command(spec: dict, players: int) -> tuple[list[str], dict[str, str]]:
     for override in overrides(players, str(Path(gba_bios).expanduser())):
         flags += ["-C", override]
 
-    # A path is a disc for a plain Dolphin; anything else is an entry id for
-    # gotg, which knows where the disc lives and which emulator to build.
-    if gc.endswith(DISC_SUFFIXES) or "/" in gc:
-        dolphin = spec.get("dolphin", "dolphin-emu")
-        return [dolphin, "-b", "-e", str(Path(gc).expanduser()), *flags], {}
-    gotg = str(Path(spec.get("gotg", GOTG_WRAPPER)).expanduser())
-    # GOTG_FULLSCREEN=0: a fullscreen Dolphin inside the frame would cover the
-    # GBAs with the game it is meant to sit between.
-    return [gotg, "play", gc, *flags], {"GOTG_FULLSCREEN": "0"}
+    # `dolphin` is whatever runs Dolphin: dolphin-emu from PATH, or a launcher's
+    # own wrapper around a Dolphin it built. Either takes Dolphin's arguments.
+    dolphin = spec.get("dolphin", "dolphin-emu")
+    return [dolphin, "-b", "-e", str(Path(gc).expanduser()), *flags]
 
 
 def _pre_launch(spec: dict, players: int) -> list[list[str]]:
@@ -155,12 +147,11 @@ def _pre_launch(spec: dict, players: int) -> list[list[str]]:
     not at all."""
     if players < 2:
         return []
-    config_dir = spec.get("config_dir")
-    if config_dir is None:
-        gc = spec.get("gc", "")
-        config_dir = GOTG_CONFIG_DIR if not (gc.endswith(DISC_SUFFIXES) or "/" in gc) else "~/.config"
+    config_dir = spec.get("config_dir", DEFAULT_CONFIG_DIR)
     argv = ["python3", "-m", "splitscreen.handlers.dolphin_gba",
             "--config-dir", str(Path(config_dir).expanduser())]
+    if spec.get("pads_cmd"):
+        argv += ["--pads-cmd", spec["pads_cmd"]]
     for port, device in enumerate(devices(players, spec.get("pads")), start=1):
         argv += ["--gba", f"{port}={device}"]
     return [argv]
@@ -172,10 +163,7 @@ def expand(spec: dict) -> dict:
     _require(isinstance(players, int) and not isinstance(players, bool), "players must be a whole number")
     _require(1 <= players <= MAX_PLAYERS, f"players must be 1 to {MAX_PLAYERS}, got {players}")
 
-    command, env = _command(spec, players)
-    instance: dict = {"id": spec.get("id", "fsa"), "command": command}
-    if env:
-        instance["env"] = env
+    instance: dict = {"id": spec.get("id", "fsa"), "command": _command(spec, players)}
     pre = _pre_launch(spec, players)
     if pre:
         instance["pre_launch"] = pre
@@ -192,10 +180,11 @@ def expand(spec: dict) -> dict:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--players", type=int, default=2)
-    ap.add_argument("--gc", required=True, help="a gotg entry id, or the path to a disc image")
+    ap.add_argument("--gc", required=True, help="the game's disc image")
     ap.add_argument("--gba-bios", required=True, help="the GBA BIOS Dolphin boots an integrated GBA with")
     ap.add_argument("--config-dir", help="where Dolphin keeps dolphin-emu/GBA.ini")
-    ap.add_argument("--dolphin", help="the Dolphin to run a disc with (default: dolphin-emu from PATH)")
+    ap.add_argument("--dolphin", help="what runs Dolphin (default: dolphin-emu from PATH)")
+    ap.add_argument("--pads-cmd", help="a command printing the pads `pad:N` counts, as JSON")
     ap.add_argument("--pad", action="append", dest="pads", metavar="DEVICE",
                     help="one per player, in order: pad:N, sdl:<name> or keyboard")
     # No default: without both, the frame follows the screen it is shown on
@@ -212,6 +201,8 @@ def main(argv: list[str]) -> int:
         spec["dolphin"] = args.dolphin
     if args.pads:
         spec["pads"] = args.pads
+    if args.pads_cmd:
+        spec["pads_cmd"] = args.pads_cmd
     try:
         config = expand(spec)
         if args.width and args.height:

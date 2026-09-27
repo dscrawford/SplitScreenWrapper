@@ -4,12 +4,11 @@ Dolphin keeps GBA bindings in <config>/dolphin-emu/GBA.ini, one [GBAn] section
 per port, and reads it at startup. Nothing on the command line can set it, so
 this runs as a `pre_launch` step of a split-screen instance:
 
-    python3 -m splitscreen.handlers.dolphin_gba --config-dir ~/.local/state/gotg/env/env-gamecube/config \\
-        --gba 1=pad:0 --gba 2=pad:1
+    python3 -m splitscreen.handlers.dolphin_gba --config-dir ~/.config \\
+        --gba "1=sdl:Xbox 360 Controller" --gba 2=keyboard
 
-Device forms: `pad:N` = the Nth controller in player order — gotg's own seating
-(`gotg controllers order`) where that is available, SDL's enumeration order
-otherwise —
+Device forms: `pad:N` = the Nth controller in the list `--pads-cmd` prints (see
+`pads_from_json`); without one there is nothing to count, and it is the keyboard --
 `sdl:<Name>` = "SDL/0/<Name>" verbatim -- the way for a caller that knows which
 device it means (a controller service's virtual pads, say) to say so --
 `keyboard` = Dolphin's stock key map.
@@ -22,7 +21,7 @@ import argparse
 import json
 import os
 import re
-import shutil
+import shlex
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -90,72 +89,29 @@ def parse_device(spec: str, pads: Sequence[str], warn=print) -> str:
             raise ValueError(f"bad pad index in {spec!r}") from exc
         if idx < len(pads):
             return pads[idx]
-        warn(f"dolphin_gba: pad:{idx} is not connected ({len(pads)} pad(s) found); using keyboard")
+        warn(f"dolphin_gba: pad:{idx} is not connected ({len(pads)} pad(s) listed"
+             f"{'' if pads else ' -- is --pads-cmd set?'}); using keyboard")
         return KEYBOARD_DEVICE
     raise ValueError(f"unknown device spec {spec!r}; use pad:N, sdl:<name> or keyboard")
 
 
-def pads_from_gotg(output: str) -> tuple[str, ...]:
-    """Pure: gotg-pads JSON -> Dolphin device strings, in SDL's enumeration order.
+def pads_from_json(output: str) -> tuple[str, ...]:
+    """Pure: a pad list as JSON -> Dolphin device strings, in the list's order.
 
-    The array order is what SDL enumerated, which is the order the emulators
-    themselves see. `slot` is *not* that order: it counts how many pads of the
-    same identity came before this one, so it is 0 for the first Steam
-    Controller and 0 again for the first Xbox pad — sorting by it interleaves
-    the models and makes pad:2 mean something different depending on what else
-    is plugged in. It is still what goes into the device string, because that
-    is how Dolphin tells two identical pads apart.
+    One object per controller, `{"name": ..., "slot": N, "gamepad": true}`:
+    `slot` counts how many pads of the same name came before this one, which is
+    how Dolphin tells two identical pads apart, and anything whose `gamepad` is
+    false is skipped. The order is the list's own -- whatever order the caller
+    means by player one, two, three.
     """
     try:
         rows = json.loads(output)
     except ValueError:
         return ()
-    rows = [r for r in rows if isinstance(r, dict) and r.get("gamepad") and r.get("map") is not None]
-    return tuple(f"SDL/{int(r.get('slot', 0))}/{r.get('name', 'Unknown')}" for r in rows)
-
-
-def players_from_gotg(output: str) -> tuple[str, ...]:
-    """Pure: `gotg controllers order --json` -> Dolphin device strings, player 1 first.
-
-    Better than enumeration order when it is available, because it is the order
-    a person chose: `gotg controllers order --set xbox` makes that pad player
-    one, and every emulator gotg launches already seats it there. A split
-    screen that handed out pads in a different order would be the one thing on
-    the machine disagreeing about who player two is.
-
-    The key is `<identity>/<slot>`, and the slot half is what Dolphin uses to
-    tell two pads of the same model apart.
-    """
-    try:
-        payload = json.loads(output)
-    except ValueError:
+    if not isinstance(rows, list):
         return ()
-    players = payload.get("players") if isinstance(payload, dict) else None
-    if not isinstance(players, list):
-        return ()
-    seated = [p for p in players if isinstance(p, dict) and p.get("seated") and p.get("name")]
-    seated.sort(key=lambda p: int(p.get("player", 0)))
-    out = []
-    for player in seated:
-        _, _, slot = str(player.get("key", "")).rpartition("/")
-        out.append(f"SDL/{slot if slot.isdigit() else '0'}/{player['name']}")
-    return tuple(out)
-
-
-GOTG_WRAPPER = Path.home() / ".local/state/gotg/app/bin/gotg"
-
-
-def gotg_pads_from_wrapper(wrapper: Path = GOTG_WRAPPER) -> str | None:
-    """gotg keeps gotg-pads off PATH and reaches it through its own wrapper's PATH edits;
-    pull the store path out of that wrapper so the handler works without configuration."""
-    try:
-        m = re.search(r"([^':\s]*gotg-pads[^':\s]*/bin)", wrapper.read_text())
-    except OSError:
-        return None
-    if not m:
-        return None
-    exe = Path(m.group(1)) / "gotg-pads"
-    return str(exe) if exe.exists() else None
+    rows = [r for r in rows if isinstance(r, dict) and r.get("gamepad", True) and r.get("name")]
+    return tuple(f"SDL/{int(r.get('slot', 0))}/{r['name']}" for r in rows)
 
 
 def _run(argv: list[str], timeout: int = 20) -> str:
@@ -165,38 +121,30 @@ def _run(argv: list[str], timeout: int = 20) -> str:
         return ""
 
 
-def detect_pads() -> tuple[str, ...]:
-    """Every pad, in player order.
+def detect_pads(command: str | None) -> tuple[str, ...]:
+    """Every pad, in player order, as the caller's `command` lists them.
 
-    gotg's own seating first — it is the order a person chose and the order
-    every other emulator on the machine already uses — and SDL's enumeration
-    order behind it, for a machine with no gotg or a gotg too old to answer.
+    This does not look for controllers itself: which pads exist and which is
+    player one is the business of whatever launched the session, and it says so
+    by naming a command. None, or one that prints nothing usable, is no pads.
     """
-    gotg = os.environ.get("GOTG_BIN") or shutil.which("gotg") or (str(GOTG_WRAPPER) if GOTG_WRAPPER.exists() else "")
-    if gotg:
-        players = players_from_gotg(_run([gotg, "controllers", "order", "--json"]))
-        if players:
-            return players
-
-    exe = os.environ.get("GOTG_PADS") or shutil.which("gotg-pads") or gotg_pads_from_wrapper()
-    if not exe:
+    if not command:
         return ()
-    return pads_from_gotg(_run([exe], timeout=10))
+    return pads_from_json(_run(shlex.split(command), timeout=10))
 
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config-dir", required=True, help="XDG config dir Dolphin uses (contains dolphin-emu/)")
-    ap.add_argument("--gba", action="append", default=[], metavar="PORT=DEVICE", help="e.g. 1=pad:0, 2=keyboard, 3=sdl:Xbox 360 Controller")
-    ap.add_argument("--pads-bin", help="override gotg-pads binary (default: $GOTG_PADS or PATH)")
+    ap.add_argument("--gba", action="append", default=[], metavar="PORT=DEVICE", help="e.g. 1=sdl:Xbox 360 Controller, 2=keyboard, 3=pad:0")
+    ap.add_argument("--pads-cmd", default=os.environ.get("SPLITSCREEN_PADS"),
+                    help="a command printing the pads `pad:N` counts, as JSON (default: $SPLITSCREEN_PADS)")
     args = ap.parse_args(argv)
-    if args.pads_bin:
-        os.environ["GOTG_PADS"] = args.pads_bin
 
     # Only `pad:N` counts controllers. A caller that names its devices -- `sdl:`,
     # `keyboard` -- is not made to wait on an enumeration it has no use for.
     specs = [item.partition("=")[2] for item in args.gba]
-    pads = detect_pads() if any(spec.startswith("pad:") for spec in specs) else ()
+    pads = detect_pads(args.pads_cmd) if any(spec.startswith("pad:") for spec in specs) else ()
     sections: dict[int, str] = {}
     for item in args.gba:
         port_s, _, spec = item.partition("=")

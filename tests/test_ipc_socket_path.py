@@ -5,7 +5,7 @@ its terminator. Nothing warns when it does not fit — sway strncpy's into it, s
 the kernel binds the *truncated* name. The compositor comes up perfectly and the
 session waits five seconds for a socket that cannot appear.
 
-That is not hypothetical. GOTG names a workdir after the game's environment, and
+That is not hypothetical. A launcher named its workdir after the game's environment, and
 `env-gamecube-usa_legend_of_zelda_four_swords_adventures-4p` makes the directory
 105 characters; `<workdir>/sway.sock` is 115 bytes, and what appeared on disk
 was a socket called `s`.
@@ -18,9 +18,9 @@ import pytest
 
 from splitscreen.session import SUN_PATH_MAX, ipc_socket_path
 
-# The one that broke, verbatim.
+# The one that broke, the same length.
 FOUR_SWORDS = Path(
-    "/home/daniel/.local/state/gotg/env/"
+    "/home/player/.local/state/game/env/"
     "env-gamecube-usa_legend_of_zelda_four_swords_adventures-4p/splitscreen"
 )
 

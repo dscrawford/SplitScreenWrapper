@@ -16,7 +16,7 @@ from splitscreen.config import session_from_dict
 from splitscreen.modes import expand as expand_config
 from splitscreen.modes import fsa
 
-BASE = {"name": "fsa", "gc": "usa.legend_of_zelda_four_swords_adventures", "gba_bios": "/roms/gba_bios.bin"}
+BASE = {"name": "fsa", "gc": "/games/fsa.rvz", "gba_bios": "/roms/gba_bios.bin"}
 
 
 def config(**extra) -> dict:
@@ -133,18 +133,21 @@ def test_the_binding_and_the_windows_agree_on_how_many_players_there_are():
 # --- the two sources --------------------------------------------------------
 
 
-def test_an_entry_id_is_launched_through_gotg():
+def test_the_disc_is_launched_through_dolphin_windowed():
     made = config(players=2)["instances"][0]
-    assert made["command"][1:3] == ["play", BASE["gc"]]
+    assert made["command"][:4] == ["dolphin-emu", "-b", "-e", "/games/fsa.rvz"]
     # A fullscreen Dolphin would cover the GBAs it is supposed to sit between.
-    assert made["env"]["GOTG_FULLSCREEN"] == "0"
     assert "Dolphin.Display.Fullscreen=False" in made["command"]
+    assert "env" not in made
 
 
-def test_a_disc_path_is_launched_through_dolphin():
-    made = fsa.expand({**BASE, "gc": "/games/fsa.iso", "players": 2})["instances"][0]
-    assert made["command"][:4] == ["dolphin-emu", "-b", "-e", "/games/fsa.iso"]
-    assert "env" not in made, "nothing to tell a plain Dolphin about gotg"
+def test_the_binder_is_told_where_dolphin_keeps_its_config_and_how_to_list_pads():
+    argv = config(players=2)["instances"][0]["pre_launch"][0]
+    assert argv[argv.index("--config-dir") + 1].endswith("/.config")
+    assert "--pads-cmd" not in argv
+    argv = config(players=2, config_dir="/tmp/dolphin", pads_cmd="my-pads")["instances"][0]["pre_launch"][0]
+    assert argv[argv.index("--config-dir") + 1] == "/tmp/dolphin"
+    assert argv[argv.index("--pads-cmd") + 1] == "my-pads"
 
 
 def test_the_gba_bios_is_passed_to_dolphin():
@@ -155,7 +158,7 @@ def test_both_sources_are_required():
     with pytest.raises(ValueError, match="gc"):
         fsa.expand({"name": "fsa", "players": 2, "gba_bios": "/roms/gba_bios.bin"})
     with pytest.raises(ValueError, match="gba_bios"):
-        fsa.expand({"name": "fsa", "players": 2, "gc": "usa.x"})
+        fsa.expand({"name": "fsa", "players": 2, "gc": "/games/x.iso"})
 
 
 @pytest.mark.parametrize("players", [0, 5, -1, "2", 2.0, True])
@@ -193,7 +196,7 @@ def test_a_config_without_a_mode_is_untouched():
 
 
 def test_a_pinned_dolphin_can_be_named(tmp_path):
-    # A launcher that builds its own Dolphin — gotg does — must be able to say
+    # A launcher that builds its own Dolphin must be able to say
     # which one, rather than hoping PATH agrees with it.
     out = tmp_path / "fsa.json"
     fsa.main(["--players", "2", "--gc", "/games/fsa.rvz", "--gba-bios", BASE["gba_bios"],
